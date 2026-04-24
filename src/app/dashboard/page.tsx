@@ -1,5 +1,6 @@
 "use client";
 
+import { getUserChosenName, hasUserChosenName } from "@/lib/userProfile";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -18,6 +19,10 @@ export default function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push('/sign-in');
+        return;
+      }
+      if (!hasUserChosenName(user)) {
+        router.push("/onboarding");
         return;
       }
       setUser(user);
@@ -43,6 +48,8 @@ export default function Dashboard() {
     return null;
   }
 
+  const greetingName = getUserChosenName(user) ?? user.email;
+
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-8">
       <nav className="flex justify-between items-center mb-8">
@@ -57,7 +64,7 @@ export default function Dashboard() {
 
       <div className="max-w-4xl mx-auto">
         <div className="bg-zinc-900 rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">Welcome, {user.email}</h2>
+          <h2 className="text-xl font-semibold mb-4">Welcome, {greetingName}</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-zinc-800 p-4 rounded">
               <h3 className="text-lg font-medium mb-2">Your Meetings</h3>

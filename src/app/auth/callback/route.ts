@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasUserChosenName } from "@/lib/userProfile";
 import { createClient } from "@/utils/supabase/server";
 
 export async function GET(request: Request) {
@@ -15,6 +16,14 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user && !hasUserChosenName(user)) {
+        next = "/onboarding";
+      }
+
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
