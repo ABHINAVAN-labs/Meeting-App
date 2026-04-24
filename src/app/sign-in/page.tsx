@@ -1,16 +1,19 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import { redirect } from "next/navigation";
 import { useEffect, useState } from "react";
+import { redirect } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 export default function SignIn() {
+  const [supabase] = useState(() => createClient());
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [supabase] = useState(() => createClient());
 
   useEffect(() => {
     const checkSession = async () => {
@@ -37,6 +40,7 @@ export default function SignIn() {
     } else {
       redirect("/");
     }
+
     setLoading(false);
   };
 
