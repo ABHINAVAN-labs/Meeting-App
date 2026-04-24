@@ -86,7 +86,7 @@ BACKEND_API_URL=http://localhost:3001/api
 
 ### 2.1 Supabase Redirect URLs
 
-For OAuth and email auth redirects to work in local development, production, and Vercel preview deployments, open **Supabase Dashboard → Authentication → URL Configuration** and make sure these values are configured:
+For OAuth and email auth redirects to work in local development, open **Supabase Dashboard → Authentication → URL Configuration** and make sure these values are configured:
 
 - `Site URL`: your primary app URL, for example `https://meeting-app-liard.vercel.app`
 - `Additional Redirect URLs`:
@@ -94,11 +94,8 @@ For OAuth and email auth redirects to work in local development, production, and
   - `https://meeting-app-liard.vercel.app/auth/callback`
   - `http://localhost:3000/**`
   - `https://meeting-app-liard.vercel.app/**`
-  - `https://*-soumyadeep.vercel.app/**`
 
 If `http://localhost:3000/auth/callback` or a matching wildcard pattern is missing, Supabase can ignore the local `redirectTo` value and fall back to the production `Site URL`, which causes sign-in to bounce to Vercel with a `?code=...` query string.
-
-In the browser, this app now prefers `window.location.origin` for auth redirects so Vercel preview branches return to their own preview URL instead of the fixed production domain.
 
 **Backend** (`backend/.env`):
 ```env

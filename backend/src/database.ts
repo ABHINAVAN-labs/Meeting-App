@@ -1,8 +1,6 @@
 import { Pool } from 'pg';
 import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import { envPath } from './env';
 
 const databaseUrl = process.env.DATABASE_URL;
 const isSupabaseDatabase = databaseUrl?.includes('supabase.com');
@@ -40,6 +38,16 @@ export const testConnection = async () => {
     ) {
       console.error(
         'Hint: use the Supabase pooler connection string in DATABASE_URL for local development, not the direct db.<project-ref>.supabase.co host.'
+      );
+    }
+
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      error.code === '28P01'
+    ) {
+      console.error(
+        `Hint: PostgreSQL rejected the username/password from ${envPath}. Re-copy the current Supabase database password into DATABASE_URL, and URL-encode it if it contains special characters.`
       );
     }
 
