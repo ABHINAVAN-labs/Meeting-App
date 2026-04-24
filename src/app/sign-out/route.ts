@@ -5,6 +5,10 @@ export async function POST() {
   const supabase = await createClient();
   
   await supabase.auth.signOut();
-  
-  return NextResponse.redirect(new URL('/sign-in', process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'));
+
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ||
+    "http://localhost:3000";
+
+  return NextResponse.redirect(new URL("/sign-in", appUrl));
 }
