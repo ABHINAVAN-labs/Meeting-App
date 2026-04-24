@@ -5,20 +5,21 @@ import { createClient } from "@/utils/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  let next = searchParams.get("next") ?? "/";
+  let next = searchParams.get("next") ?? "/dashboard";
 
   if (!next.startsWith("/")) {
-    next = "/";
+    next = "/dashboard";
   }
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const user = session?.user;
 
       if (user && !hasUserChosenName(user)) {
         next = "/onboarding";
