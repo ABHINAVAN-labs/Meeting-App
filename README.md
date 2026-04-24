@@ -78,10 +78,24 @@ Meeting-App/
 
 **Frontend** (`.env.local`):
 ```env
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_anon_key
 BACKEND_API_URL=http://localhost:3001/api
 ```
+
+### 2.1 Supabase Redirect URLs
+
+For OAuth and email auth redirects to work in local development, open **Supabase Dashboard → Authentication → URL Configuration** and make sure these values are configured:
+
+- `Site URL`: your primary app URL, for example `https://meeting-app-liard.vercel.app`
+- `Additional Redirect URLs`:
+  - `http://localhost:3000/auth/callback`
+  - `https://meeting-app-liard.vercel.app/auth/callback`
+  - `http://localhost:3000/**`
+  - `https://meeting-app-liard.vercel.app/**`
+
+If `http://localhost:3000/auth/callback` or a matching wildcard pattern is missing, Supabase can ignore the local `redirectTo` value and fall back to the production `Site URL`, which causes sign-in to bounce to Vercel with a `?code=...` query string.
 
 **Backend** (`backend/.env`):
 ```env

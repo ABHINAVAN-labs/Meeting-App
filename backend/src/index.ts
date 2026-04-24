@@ -1,12 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 
+import { envPath } from './env';
 import { pool, supabaseAuthClient } from './database';
 import { authMiddleware } from './middleware/auth';
-
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -40,6 +37,7 @@ app.listen(PORT, async () => {
       console.log('Supabase auth client initialized');
     } else {
       console.error('Startup error:', error);
+      console.error(`Loaded backend environment from ${envPath}`);
     }
   }
 });

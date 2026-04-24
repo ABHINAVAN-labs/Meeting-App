@@ -1,12 +1,15 @@
 "use client";
 
+import { getAuthCallbackUrl } from "@/lib/authRedirect";
+import { hasUserChosenName } from "@/lib/userProfile";
 import { createClient } from "@/utils/supabase/client";
 import { useEffect, useState } from "react";
-import { redirect } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default function SignIn() {
+  const router = useRouter();
   const [supabase] = useState(() => createClient());
 
   const [email, setEmail] = useState("");
@@ -19,18 +22,22 @@ export default function SignIn() {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        redirect("/");
+        const nextPath = hasUserChosenName(session.user) ? "/dashboard" : "/onboarding";
+        router.replace(nextPath);
       }
     };
     checkSession();
-  }, [supabase]);
+  }, [router, supabase]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -38,7 +45,9 @@ export default function SignIn() {
     if (error) {
       setError(error.message);
     } else {
-      redirect("/");
+      const nextPath = hasUserChosenName(user) ? "/dashboard" : "/onboarding";
+      router.push(nextPath);
+      router.refresh();
     }
 
     setLoading(false);
@@ -51,7 +60,7 @@ export default function SignIn() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+        redirectTo: getAuthCallbackUrl(),
       },
     });
 

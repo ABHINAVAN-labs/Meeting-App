@@ -1,5 +1,7 @@
 "use client";
 
+import { getAuthCallbackUrl } from "@/lib/authRedirect";
+import { hasUserChosenName } from "@/lib/userProfile";
 import { createClient } from "@/utils/supabase/client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -20,7 +22,8 @@ export default function SignUp() {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        router.push("/");
+        const nextPath = hasUserChosenName(session.user) ? "/dashboard" : "/onboarding";
+        router.replace(nextPath);
       }
     };
     checkSession();
@@ -31,18 +34,26 @@ export default function SignUp() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signUp({
+    const {
+      data: { session, user },
+      error,
+    } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: getAuthCallbackUrl(),
       },
     });
 
     if (error) {
       setError(error.message);
     } else {
-      router.push("/sign-in");
+      if (session && user) {
+        const nextPath = hasUserChosenName(user) ? "/dashboard" : "/onboarding";
+        router.push(nextPath);
+      } else {
+        router.push("/sign-in");
+      }
     }
 
     setLoading(false);
@@ -55,7 +66,7 @@ export default function SignUp() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+        redirectTo: getAuthCallbackUrl(),
       },
     });
 
