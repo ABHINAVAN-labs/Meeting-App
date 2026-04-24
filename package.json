@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build:backend": "tsc -p backend/tsconfig.json",
-    "build:frontend": "next build",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
