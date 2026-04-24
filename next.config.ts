@@ -1,9 +1,5 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  middleware: [
-    "src/middleware.ts",
-  ],
-};
+const nextConfig: NextConfig = {};
 
 export default nextConfig;
