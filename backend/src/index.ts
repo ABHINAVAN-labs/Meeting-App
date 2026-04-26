@@ -3,7 +3,6 @@ import cors from 'cors';
 
 import { envPath } from './env';
 import { pool, supabaseAuthClient } from './database';
-import { authMiddleware } from './middleware/auth';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
