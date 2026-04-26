@@ -62,6 +62,31 @@ export default function OnboardingPage() {
       return;
     }
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      const { error: profileError } = await supabase.from("profiles").upsert(
+        {
+          id: user.id,
+          email: user.email ?? "",
+          display_name: trimmedNickname,
+          avatar_url:
+            typeof user.user_metadata?.avatar_url === "string"
+              ? user.user_metadata.avatar_url
+              : null,
+        },
+        { onConflict: "id" }
+      );
+
+      if (profileError) {
+        setError(profileError.message);
+        setSaving(false);
+        return;
+      }
+    }
+
     router.push("/dashboard");
     router.refresh();
   };

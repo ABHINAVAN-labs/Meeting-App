@@ -4,17 +4,18 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create users table (if not using Clerk's user sync)
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+-- Create user profiles table tied directly to Supabase auth.users
+CREATE TABLE IF NOT EXISTS profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email VARCHAR(255) UNIQUE NOT NULL,
-    name VARCHAR(255),
+    display_name VARCHAR(255),
     avatar_url TEXT,
-    preferences JSONB DEFAULT '{}',
-    communication_style VARCHAR(50) DEFAULT 'collaborative',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Enable row level security for user-owned profile access
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 -- Create meetings table
 CREATE TABLE IF NOT EXISTS meetings (
@@ -26,7 +27,7 @@ CREATE TABLE IF NOT EXISTS meetings (
     participants UUID[] NOT NULL,
     video_url TEXT,
     recording_url TEXT,
-    created_by UUID REFERENCES users(id),
+    created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS meetings (
 CREATE TABLE IF NOT EXISTS insights (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     meeting_id UUID REFERENCES meetings(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
     summary TEXT NOT NULL,
     "keyPoints" JSONB DEFAULT '[]',
     "actionItems" JSONB DEFAULT '[]',
@@ -75,7 +76,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create triggers for updated_at
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_meetings_updated_at BEFORE UPDATE ON meetings
@@ -85,7 +86,32 @@ CREATE TRIGGER update_insights_updated_at BEFORE UPDATE ON insights
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Add comments for documentation
-COMMENT ON TABLE users IS 'User profiles and preferences';
+COMMENT ON TABLE profiles IS 'User profiles linked 1:1 with Supabase auth users';
 COMMENT ON TABLE meetings IS 'Meeting records with participants and metadata';
 COMMENT ON TABLE insights IS 'LLM-generated insights per user';
 COMMENT ON TABLE cv_analyses IS 'Computer vision analysis jobs and results';
+
+-- Allow signed-in users to manage only their own profile row.
+GRANT SELECT, INSERT, UPDATE ON TABLE profiles TO authenticated;
+
+DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
+CREATE POLICY "profiles_select_own"
+ON profiles
+FOR SELECT
+TO authenticated
+USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "profiles_insert_own" ON profiles;
+CREATE POLICY "profiles_insert_own"
+ON profiles
+FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
+CREATE POLICY "profiles_update_own"
+ON profiles
+FOR UPDATE
+TO authenticated
+USING (auth.uid() = id)
+WITH CHECK (auth.uid() = id);

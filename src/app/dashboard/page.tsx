@@ -1,65 +1,51 @@
-"use client";
-
-import { getUserChosenName, hasUserChosenName } from "@/lib/userProfile";
-import { createClient } from "@/utils/supabase/client";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getOrCreateCurrentProfile } from "@/lib/profileStore";
+import { getProfileDisplayName, getProfileInitial } from "@/lib/profile";
+import { hasUserChosenName } from "@/lib/userProfile";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-export default function Dashboard() {
-  const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [supabase] = useState(() => createClient());
+export default async function Dashboard() {
+  const { user, profile } = await getOrCreateCurrentProfile();
 
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/sign-in');
-        return;
-      }
-      if (!hasUserChosenName(user)) {
-        router.push("/onboarding");
-        return;
-      }
-      setUser(user);
-      setLoading(false);
-    };
-    getUser();
-  }, [router, supabase]);
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/sign-in');
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">
-        Loading...
-      </div>
-    );
+  if (!user || !profile) {
+    redirect("/sign-in");
   }
 
-  if (!user) {
-    return null;
+  if (!hasUserChosenName(user)) {
+    redirect("/onboarding");
   }
 
-  const greetingName = getUserChosenName(user) ?? user.email;
+  const greetingName = getProfileDisplayName(profile);
+  const profileInitial = getProfileInitial(greetingName);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-8">
       <nav className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <button
-          onClick={handleSignOut}
-          className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
-        >
-          Sign Out
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/profile"
+            className="flex items-center gap-3 rounded-full border border-zinc-800 bg-zinc-900 px-2 py-2 transition-colors hover:border-zinc-700 hover:bg-zinc-800"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold">
+              {profileInitial}
+            </span>
+            <span className="hidden pr-2 text-sm text-zinc-300 sm:block">
+              Profile
+            </span>
+          </Link>
+
+          <form action="/sign-out" method="post">
+            <button
+              type="submit"
+              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
+            >
+              Sign Out
+            </button>
+          </form>
+        </div>
       </nav>
 
       <div className="max-w-4xl mx-auto">
