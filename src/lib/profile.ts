@@ -21,13 +21,17 @@ export const getUserDisplayName = (user: User | null | undefined) => {
   return trimmedName.length > 0 ? trimmedName : null;
 };
 
-export const getUserAvatarUrl = (user: User | null | undefined) => {
-  const avatarUrl = user?.user_metadata?.avatar_url;
+const APP_AVATAR_PATH_FRAGMENT = "/storage/v1/object/public/avatars/";
 
-  return typeof avatarUrl === "string" && avatarUrl.trim().length > 0
-    ? avatarUrl
-    : null;
-};
+export const isManagedAvatarUrl = (avatarUrl: string | null | undefined) =>
+  typeof avatarUrl === "string" &&
+  avatarUrl.trim().length > 0 &&
+  avatarUrl.includes(APP_AVATAR_PATH_FRAGMENT);
+
+export const getManagedAvatarUrl = (
+  avatarUrl: string | null | undefined
+): string | null =>
+  isManagedAvatarUrl(avatarUrl) ? avatarUrl ?? null : null;
 
 export const getProfileDisplayName = (
   profile: Pick<UserProfileRecord, "display_name" | "email"> | null | undefined
@@ -35,3 +39,25 @@ export const getProfileDisplayName = (
 
 export const getProfileInitial = (name: string | null | undefined) =>
   (name?.trim().charAt(0) || "U").toUpperCase();
+
+export const getProfileAvatarColor = (seed: string | null | undefined) => {
+  const palette = [
+    "#2563eb",
+    "#059669",
+    "#dc2626",
+    "#d97706",
+    "#7c3aed",
+    "#0891b2",
+    "#be123c",
+    "#4f46e5",
+  ];
+
+  const source = seed?.trim() || "user";
+  let hash = 0;
+
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
+  }
+
+  return palette[hash % palette.length];
+};

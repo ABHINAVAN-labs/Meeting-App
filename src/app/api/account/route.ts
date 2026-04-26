@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { createClient } from "@/utils/supabase/server";
+import {
+  clearServerSupabaseAuthCookies,
+  isInvalidRefreshTokenError,
+} from "@/lib/supabaseAuth";
 
 export async function DELETE() {
   try {
@@ -31,6 +35,11 @@ export async function DELETE() {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (isInvalidRefreshTokenError(error)) {
+      await clearServerSupabaseAuthCookies();
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     console.error("Account delete route error:", error);
     return NextResponse.json(
       { error: "Internal server error" },

@@ -1,5 +1,9 @@
 import { createClient } from "@/utils/supabase/server";
 import { hasUserChosenName } from "@/lib/userProfile";
+import {
+  clearServerSupabaseAuthCookies,
+  isInvalidRefreshTokenError,
+} from "@/lib/supabaseAuth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -7,7 +11,21 @@ export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  let user = null;
+
+  try {
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    user = currentUser;
+  } catch (error) {
+    if (!isInvalidRefreshTokenError(error)) {
+      throw error;
+    }
+
+    await clearServerSupabaseAuthCookies();
+  }
 
   if (user) {
     redirect(hasUserChosenName(user) ? "/dashboard" : "/onboarding");

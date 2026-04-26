@@ -1,5 +1,8 @@
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import DeleteAccountButton from "@/app/profile/DeleteAccountButton";
+import ProfileAvatarEditor from "@/app/profile/ProfileAvatarEditor";
 import { getOrCreateCurrentProfile } from "@/lib/profileStore";
 import { getProfileDisplayName, getProfileInitial } from "@/lib/profile";
 
@@ -18,6 +21,16 @@ export default async function ProfilePage() {
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-10 text-white">
       <div className="mx-auto max-w-4xl space-y-6">
+        <div className="flex justify-start">
+          <Link
+            href="/dashboard"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+            aria-label="Go back to dashboard"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+        </div>
+
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">
@@ -25,10 +38,16 @@ export default async function ProfilePage() {
             </p>
             <h1 className="mt-2 text-4xl font-bold">{displayName}</h1>
           </div>
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-2xl font-semibold">
-            {initial}
-          </div>
         </div>
+
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+          <ProfileAvatarEditor
+            userId={profile.id}
+            displayName={displayName}
+            initial={initial}
+            avatarUrl={profile.avatar_url}
+          />
+        </section>
 
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
           <h2 className="text-xl font-semibold">Account details</h2>

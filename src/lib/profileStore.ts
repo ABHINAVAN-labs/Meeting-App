@@ -1,18 +1,25 @@
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/server";
 import {
-  getUserAvatarUrl,
+  getManagedAvatarUrl,
   getUserDisplayName,
   type UserProfileRecord,
 } from "@/lib/profile";
+import {
+  clearServerSupabaseAuthCookies,
+  isInvalidRefreshTokenError,
+} from "@/lib/supabaseAuth";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
-const buildProfilePayload = (user: User) => ({
+const buildProfilePayload = (
+  user: User,
+  existingProfile?: Partial<UserProfileRecord> | null
+) => ({
   id: user.id,
-  email: user.email ?? "",
-  display_name: getUserDisplayName(user),
-  avatar_url: getUserAvatarUrl(user),
+  email: user.email ?? existingProfile?.email ?? "",
+  display_name: getUserDisplayName(user) ?? existingProfile?.display_name ?? null,
+  avatar_url: getManagedAvatarUrl(existingProfile?.avatar_url),
 });
 
 export async function syncProfileFromAuthUser(
@@ -21,7 +28,28 @@ export async function syncProfileFromAuthUser(
 ) {
   const client = supabase ?? (await createClient());
 
-  const payload = buildProfilePayload(user);
+  const { data: existingProfile, error: existingProfileError } = await client
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle<UserProfileRecord>();
+
+  if (existingProfileError) {
+    console.error("Profile lookup failed", {
+      userId: user.id,
+      code: existingProfileError.code,
+      message: existingProfileError.message,
+      details: existingProfileError.details,
+      hint: existingProfileError.hint,
+    });
+    throw new Error(
+      `Failed to load profile: ${existingProfileError.message}${
+        existingProfileError.code ? ` (code ${existingProfileError.code})` : ""
+      }`
+    );
+  }
+
+  const payload = buildProfilePayload(user, existingProfile);
 
   const { data, error } = await client
     .from("profiles")
@@ -49,9 +77,21 @@ export async function syncProfileFromAuthUser(
 
 export async function getOrCreateCurrentProfile() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user: User | null = null;
+
+  try {
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    user = currentUser;
+  } catch (error) {
+    if (!isInvalidRefreshTokenError(error)) {
+      throw error;
+    }
+
+    await clearServerSupabaseAuthCookies();
+  }
 
   if (!user) {
     return { user: null, profile: null };
