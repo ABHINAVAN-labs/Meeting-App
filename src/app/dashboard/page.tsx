@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import ProfileAvatar from "@/components/ProfileAvatar";
 import { getOrCreateCurrentProfile } from "@/lib/profileStore";
 import { getProfileDisplayName, getProfileInitial } from "@/lib/profile";
 import { hasUserChosenName } from "@/lib/userProfile";
@@ -29,9 +30,14 @@ export default async function Dashboard() {
             href="/profile"
             className="flex items-center gap-3 rounded-full border border-zinc-800 bg-zinc-900 px-2 py-2 transition-colors hover:border-zinc-700 hover:bg-zinc-800"
           >
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold">
-              {profileInitial}
-            </span>
+            <ProfileAvatar
+              avatarUrl={profile.avatar_url}
+              alt={`${greetingName} avatar`}
+              fallback={profileInitial}
+              seed={profile.id}
+              sizeClassName="h-10 w-10"
+              textClassName="text-sm font-semibold"
+            />
             <span className="hidden pr-2 text-sm text-zinc-300 sm:block">
               Profile
             </span>

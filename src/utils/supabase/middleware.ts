@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
+import { isInvalidRefreshTokenError } from "@/lib/supabaseAuth";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -33,9 +34,25 @@ export const updateSession = async (request: NextRequest) => {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  return { response: supabaseResponse, user };
+    return { response: supabaseResponse, user };
+  } catch (error) {
+    if (!isInvalidRefreshTokenError(error)) {
+      throw error;
+    }
+
+    for (const cookie of request.cookies.getAll()) {
+      if (!cookie.name.includes("-auth-token")) {
+        continue;
+      }
+
+      supabaseResponse.cookies.delete(cookie.name);
+    }
+
+    return { response: supabaseResponse, user: null };
+  }
 };

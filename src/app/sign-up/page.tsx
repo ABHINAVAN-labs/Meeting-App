@@ -1,6 +1,8 @@
 "use client";
 
+import type { Session } from "@supabase/supabase-js";
 import { getAuthCallbackUrl } from "@/lib/authRedirect";
+import { safeGetClientSession } from "@/lib/supabaseClientAuth";
 import { hasUserChosenName } from "@/lib/userProfile";
 import { createClient } from "@/utils/supabase/client";
 import { useEffect, useState } from "react";
@@ -20,7 +22,10 @@ export default function SignUp() {
 
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await safeGetClientSession<Session>(supabase);
+
       if (session) {
         const nextPath = hasUserChosenName(session.user) ? "/dashboard" : "/onboarding";
         router.replace(nextPath);

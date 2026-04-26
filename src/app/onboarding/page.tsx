@@ -1,6 +1,8 @@
 "use client";
 
+import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
+import { safeGetClientUser } from "@/lib/supabaseClientAuth";
 import { hasUserChosenName } from "@/lib/userProfile";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
@@ -19,7 +21,7 @@ export default function OnboardingPage() {
     const loadUser = async () => {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await safeGetClientUser<User>(supabase);
 
       if (!user) {
         router.replace("/sign-in");
@@ -64,7 +66,7 @@ export default function OnboardingPage() {
 
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await safeGetClientUser<User>(supabase);
 
     if (user) {
       const { error: profileError } = await supabase.from("profiles").upsert(
@@ -72,10 +74,7 @@ export default function OnboardingPage() {
           id: user.id,
           email: user.email ?? "",
           display_name: trimmedNickname,
-          avatar_url:
-            typeof user.user_metadata?.avatar_url === "string"
-              ? user.user_metadata.avatar_url
-              : null,
+          avatar_url: null,
         },
         { onConflict: "id" }
       );

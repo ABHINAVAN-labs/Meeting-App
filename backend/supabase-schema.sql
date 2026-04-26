@@ -76,12 +76,15 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create triggers for updated_at
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_meetings_updated_at ON meetings;
 CREATE TRIGGER update_meetings_updated_at BEFORE UPDATE ON meetings
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_insights_updated_at ON insights;
 CREATE TRIGGER update_insights_updated_at BEFORE UPDATE ON insights
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -115,3 +118,51 @@ FOR UPDATE
 TO authenticated
 USING (auth.uid() = id)
 WITH CHECK (auth.uid() = id);
+
+-- Storage bucket for profile avatars
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO NOTHING;
+
+GRANT ALL ON TABLE storage.objects TO authenticated;
+
+DROP POLICY IF EXISTS "avatar_public_read" ON storage.objects;
+CREATE POLICY "avatar_public_read"
+ON storage.objects
+FOR SELECT
+TO public
+USING (bucket_id = 'avatars');
+
+DROP POLICY IF EXISTS "avatar_upload_own" ON storage.objects;
+CREATE POLICY "avatar_upload_own"
+ON storage.objects
+FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'avatars'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+DROP POLICY IF EXISTS "avatar_update_own" ON storage.objects;
+CREATE POLICY "avatar_update_own"
+ON storage.objects
+FOR UPDATE
+TO authenticated
+USING (
+  bucket_id = 'avatars'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+)
+WITH CHECK (
+  bucket_id = 'avatars'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+DROP POLICY IF EXISTS "avatar_delete_own" ON storage.objects;
+CREATE POLICY "avatar_delete_own"
+ON storage.objects
+FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'avatars'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
