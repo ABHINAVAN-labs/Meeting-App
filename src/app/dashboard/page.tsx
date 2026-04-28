@@ -2,7 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import ProfileAvatar from "@/components/ProfileAvatar";
 import { getOrCreateCurrentProfile } from "@/lib/profileStore";
-import { getProfileDisplayName, getProfileInitial } from "@/lib/profile";
+import {
+  getProfileDisplayName,
+  getProfileInitial,
+  getProfileSubtitle,
+} from "@/lib/profile";
 import { hasUserChosenName } from "@/lib/userProfile";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +24,7 @@ export default async function Dashboard() {
 
   const greetingName = getProfileDisplayName(profile);
   const profileInitial = getProfileInitial(greetingName);
+  const subtitle = getProfileSubtitle(profile);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-8">
@@ -57,6 +62,7 @@ export default async function Dashboard() {
       <div className="max-w-4xl mx-auto">
         <div className="bg-zinc-900 rounded-lg p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">Welcome, {greetingName}</h2>
+          {subtitle ? <p className="mb-4 text-sm text-zinc-400">{subtitle}</p> : null}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-zinc-800 p-4 rounded">
               <h3 className="text-lg font-medium mb-2">Your Meetings</h3>
@@ -96,6 +102,12 @@ export default async function Dashboard() {
               className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
             >
               View Insights
+            </Link>
+            <Link
+              href="/student-analytics"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded transition-colors"
+            >
+              Student Analytics
             </Link>
           </div>
         </div>

@@ -36,6 +36,9 @@ Meeting-App/
 |   |   |-- middleware/auth.ts
 |   |   `-- types/express.d.ts
 |   `-- supabase-schema.sql
+|-- supabase/
+|   |-- migrations/            # Ordered SQL migrations for schema changes
+|   `-- README.md              # Migration runbook
 `-- README.md
 ```
 
@@ -45,6 +48,7 @@ Frontend `.env.local`:
 
 ```env
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_anon_key
 ```

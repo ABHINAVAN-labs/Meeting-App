@@ -3,12 +3,15 @@ import cors from 'cors';
 
 import { envPath } from './env';
 import { pool, supabaseAuthClient } from './database';
+import { studentAnalyticsRouter } from './modules/student-analytics';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+app.use('/student-analytics', studentAnalyticsRouter);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

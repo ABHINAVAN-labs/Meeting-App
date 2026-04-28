@@ -1,180 +1,6 @@
--- Supabase Database Schema for Meeting App
--- Run this in your Supabase SQL Editor
+-- Student analytics schema extension
+-- Depends on 202604280001_initial_base_schema.sql
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Create user profiles table tied directly to Supabase auth.users
-CREATE TABLE IF NOT EXISTS profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    display_name VARCHAR(255),
-    avatar_url TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Enable row level security for user-owned profile access
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-
--- Create meetings table
-CREATE TABLE IF NOT EXISTS meetings (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    "startTime" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "endTime" TIMESTAMP WITH TIME ZONE NOT NULL,
-    participants UUID[] NOT NULL,
-    video_url TEXT,
-    recording_url TEXT,
-    created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create insights table
-CREATE TABLE IF NOT EXISTS insights (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    meeting_id UUID REFERENCES meetings(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-    summary TEXT NOT NULL,
-    "keyPoints" JSONB DEFAULT '[]',
-    "actionItems" JSONB DEFAULT '[]',
-    sentiment VARCHAR(50) DEFAULT 'neutral',
-    factors JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create computer vision analyses table
-CREATE TABLE IF NOT EXISTS cv_analyses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    meeting_id UUID REFERENCES meetings(id) ON DELETE CASCADE,
-    "videoUrl" TEXT NOT NULL,
-    status VARCHAR(50) DEFAULT 'pending',
-    results JSONB,
-    "startedAt" TIMESTAMP WITH TIME ZONE,
-    "completedAt" TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_meetings_start_time ON meetings("startTime");
-CREATE INDEX IF NOT EXISTS idx_meetings_participants ON meetings USING GIN (participants);
-CREATE INDEX IF NOT EXISTS idx_insights_user_id ON insights(user_id);
-CREATE INDEX IF NOT EXISTS idx_insights_meeting_id ON insights(meeting_id);
-CREATE INDEX IF NOT EXISTS idx_cv_analyses_meeting_id ON cv_analyses(meeting_id);
-CREATE INDEX IF NOT EXISTS idx_cv_analyses_status ON cv_analyses(status);
-
--- Create updated_at trigger function
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Create triggers for updated_at
-DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
-CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-DROP TRIGGER IF EXISTS update_meetings_updated_at ON meetings;
-CREATE TRIGGER update_meetings_updated_at BEFORE UPDATE ON meetings
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-DROP TRIGGER IF EXISTS update_insights_updated_at ON insights;
-CREATE TRIGGER update_insights_updated_at BEFORE UPDATE ON insights
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- Add comments for documentation
-COMMENT ON TABLE profiles IS 'User profiles linked 1:1 with Supabase auth users';
-COMMENT ON TABLE meetings IS 'Meeting records with participants and metadata';
-COMMENT ON TABLE insights IS 'LLM-generated insights per user';
-COMMENT ON TABLE cv_analyses IS 'Computer vision analysis jobs and results';
-
--- Allow signed-in users to manage only their own profile row.
-GRANT SELECT, INSERT, UPDATE ON TABLE profiles TO authenticated;
-
-DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
-CREATE POLICY "profiles_select_own"
-ON profiles
-FOR SELECT
-TO authenticated
-USING (auth.uid() = id);
-
-DROP POLICY IF EXISTS "profiles_insert_own" ON profiles;
-CREATE POLICY "profiles_insert_own"
-ON profiles
-FOR INSERT
-TO authenticated
-WITH CHECK (auth.uid() = id);
-
-DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
-CREATE POLICY "profiles_update_own"
-ON profiles
-FOR UPDATE
-TO authenticated
-USING (auth.uid() = id)
-WITH CHECK (auth.uid() = id);
-
--- Storage bucket for profile avatars
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('avatars', 'avatars', true)
-ON CONFLICT (id) DO NOTHING;
-
-GRANT ALL ON TABLE storage.objects TO authenticated;
-
-DROP POLICY IF EXISTS "avatar_public_read" ON storage.objects;
-CREATE POLICY "avatar_public_read"
-ON storage.objects
-FOR SELECT
-TO public
-USING (bucket_id = 'avatars');
-
-DROP POLICY IF EXISTS "avatar_upload_own" ON storage.objects;
-CREATE POLICY "avatar_upload_own"
-ON storage.objects
-FOR INSERT
-TO authenticated
-WITH CHECK (
-  bucket_id = 'avatars'
-  AND (storage.foldername(name))[1] = auth.uid()::text
-);
-
-DROP POLICY IF EXISTS "avatar_update_own" ON storage.objects;
-CREATE POLICY "avatar_update_own"
-ON storage.objects
-FOR UPDATE
-TO authenticated
-USING (
-  bucket_id = 'avatars'
-  AND (storage.foldername(name))[1] = auth.uid()::text
-)
-WITH CHECK (
-  bucket_id = 'avatars'
-  AND (storage.foldername(name))[1] = auth.uid()::text
-);
-
-DROP POLICY IF EXISTS "avatar_delete_own" ON storage.objects;
-CREATE POLICY "avatar_delete_own"
-ON storage.objects
-FOR DELETE
-TO authenticated
-USING (
-  bucket_id = 'avatars'
-  AND (storage.foldername(name))[1] = auth.uid()::text
-);
-
--- ============================================================
--- STUDENT ANALYTICS SCHEMA EXTENSION
--- Extends the existing profiles/meetings base schema
--- ============================================================
-
--- -------------------------------------------------------
--- LAYER 1: CLASS SESSIONS (context for events)
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS class_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     subject VARCHAR(100) NOT NULL,
@@ -186,17 +12,11 @@ CREATE TABLE IF NOT EXISTS class_sessions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- -------------------------------------------------------
--- LAYER 2: RAW EVENT LOG (append-only, never updated)
--- Every single student action becomes a row here
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS student_events (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     student_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     session_id UUID REFERENCES class_sessions(id) ON DELETE SET NULL,
-
-    -- Event classification
-    event_type VARCHAR(50) NOT NULL CHECK (
+    event_type VARCHAR(50) NOT NULL CONSTRAINT student_events_event_type_check CHECK (
         event_type IN (
             'question_asked',
             'interaction',
@@ -206,23 +26,7 @@ CREATE TABLE IF NOT EXISTS student_events (
             'activity_logged'
         )
     ),
-    -- Allowed types:
-    -- 'question_asked'     -> student asked something in class
-    -- 'interaction'        -> whiteboard edit, reaction, participation
-    -- 'doubt_submitted'    -> anonymous doubt raised
-    -- 'experiment_entry'   -> something logged in Experimentation section
-    -- 'career_query'       -> Career Guidance section interaction
-    -- 'activity_logged'    -> Daily Activity section entry
-
-    -- Payload (flexible per event_type)
     event_data JSONB NOT NULL DEFAULT '{}',
-    -- question_asked: { text, topic, complexity_score (0-1, LLM-rated),
-    --                   is_conceptual (bool), follow_up_depth (int) }
-    -- interaction:    { type: 'whiteboard'|'reaction'|'poll', detail }
-    -- experiment_entry: { idea_text, novelty_score (LLM-rated), domain }
-    -- career_query:   { query_text, domain_specificity, goal_clarity_score }
-    -- activity_logged: see daily_activities table for full detail
-
     quality_score FLOAT CHECK (quality_score BETWEEN 0 AND 1),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -235,9 +39,6 @@ CREATE INDEX IF NOT EXISTS idx_events_type ON student_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_session ON student_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_events_created ON student_events(created_at DESC);
 
--- -------------------------------------------------------
--- LAYER 3: MCQ TEST DATA
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS mcq_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     student_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -246,18 +47,12 @@ CREATE TABLE IF NOT EXISTS mcq_sessions (
     topic VARCHAR(255),
     total_questions INT NOT NULL DEFAULT 20,
     max_marks INT NOT NULL DEFAULT 20,
-
-    -- Timing
     started_at TIMESTAMP WITH TIME ZONE NOT NULL,
     submitted_at TIMESTAMP WITH TIME ZONE,
     total_duration_ms INT,
-
-    -- Scores
     raw_score INT,
     irt_ability_score FLOAT,
     bloom_breakdown JSONB DEFAULT '{}',
-    -- { remember: 80, understand: 70, apply: 60, analyze: 50, evaluate: 40, create: 30 }
-
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -266,19 +61,15 @@ CREATE TABLE IF NOT EXISTS mcq_responses (
     mcq_session_id UUID NOT NULL REFERENCES mcq_sessions(id) ON DELETE CASCADE,
     question_id UUID,
     question_order INT,
-
     selected_option SMALLINT,
     correct_option SMALLINT,
     is_correct BOOLEAN,
-
     time_taken_ms INT,
     changed_answer BOOLEAN DEFAULT FALSE,
     change_count SMALLINT DEFAULT 0,
-
-    -- IRT parameters (from question bank)
     difficulty FLOAT,
     discrimination FLOAT,
-    bloom_level VARCHAR(20) CHECK (
+    bloom_level VARCHAR(20) CONSTRAINT mcq_responses_bloom_level_check CHECK (
         bloom_level IS NULL OR bloom_level IN (
             'remember',
             'understand',
@@ -288,7 +79,6 @@ CREATE TABLE IF NOT EXISTS mcq_responses (
             'create'
         )
     ),
-
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -298,15 +88,11 @@ CREATE INDEX IF NOT EXISTS idx_mcq_sessions_started_at ON mcq_sessions(started_a
 CREATE INDEX IF NOT EXISTS idx_mcq_resp_session ON mcq_responses(mcq_session_id);
 CREATE INDEX IF NOT EXISTS idx_mcq_resp_question ON mcq_responses(question_id);
 
--- -------------------------------------------------------
--- LAYER 4: DAILY ACTIVITIES
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS daily_activities (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     student_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     logged_date DATE NOT NULL DEFAULT CURRENT_DATE,
-
-    activity_type VARCHAR(50) CHECK (
+    activity_type VARCHAR(50) CONSTRAINT daily_activities_activity_type_check CHECK (
         activity_type IS NULL OR activity_type IN (
             'sport',
             'art',
@@ -316,10 +102,8 @@ CREATE TABLE IF NOT EXISTS daily_activities (
             'civic'
         )
     ),
-    -- sport / art / tech / social / academic / civic
-
     activity_name VARCHAR(255),
-    role VARCHAR(50) CHECK (
+    role VARCHAR(50) CONSTRAINT daily_activities_role_check CHECK (
         role IS NULL OR role IN (
             'leader',
             'co-leader',
@@ -329,23 +113,11 @@ CREATE TABLE IF NOT EXISTS daily_activities (
             'audience'
         )
     ),
-    -- leader / co-leader / participant / organizer / coach / audience
-
     duration_minutes INT,
     description TEXT,
     mood_score FLOAT CHECK (mood_score BETWEEN 1 AND 5),
-
-    -- LLM follow-up Q&A stored as array of {question, answer} pairs
     llm_responses JSONB DEFAULT '[]',
-
-    -- Traits derived by LLM from activity + responses (0-1 each)
     derived_traits JSONB DEFAULT '{}',
-    -- {
-    --   leadership: 0.8, teamwork: 0.6, initiative: 0.7,
-    --   resilience: 0.5, curiosity: 0.9, communication: 0.7,
-    --   creativity: 0.4, discipline: 0.8, empathy: 0.6
-    -- }
-
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -353,42 +125,27 @@ CREATE INDEX IF NOT EXISTS idx_activities_student ON daily_activities(student_id
 CREATE INDEX IF NOT EXISTS idx_activities_date ON daily_activities(student_id, logged_date DESC);
 CREATE INDEX IF NOT EXISTS idx_activities_type ON daily_activities(activity_type);
 
--- -------------------------------------------------------
--- LAYER 5: COMPUTED DIMENSION SNAPSHOTS
--- Run a daily cron job to compute and upsert these rows
--- This is the table your charts and stat cards read from
--- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS student_dimension_snapshots (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     student_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     snapshot_date DATE NOT NULL,
-
-    -- The 5 card-visible dimensions (0-100)
     knowledge_depth FLOAT,
     engagement_index FLOAT,
     curiosity_drive FLOAT,
     test_precision FLOAT,
     leadership_signal FLOAT,
-
-    -- Supporting latent dimensions
     learning_velocity FLOAT,
     retention_rate FLOAT,
     consistency_streak INT,
     mood_performance_sync FLOAT,
     peer_percentile FLOAT,
-
-    -- Composite scores
     academic_health FLOAT,
     holistic_index FLOAT,
     at_risk_score FLOAT CHECK (at_risk_score BETWEEN 0 AND 1),
-
-    -- Growth metrics
     growth_7d FLOAT,
     growth_30d FLOAT,
     growth_90d FLOAT,
-
-    -- Archetype
-    archetype VARCHAR(50) CHECK (
+    archetype VARCHAR(50) CONSTRAINT student_dimension_snapshots_archetype_check CHECK (
         archetype IS NULL OR archetype IN (
             'Deep Thinker',
             'Innovator',
@@ -400,16 +157,8 @@ CREATE TABLE IF NOT EXISTS student_dimension_snapshots (
             'Emerging'
         )
     ),
-    -- 'Deep Thinker' | 'Innovator' | 'Strategist' | 'Achiever'
-    -- 'Explorer' | 'Leader' | 'Performer' | 'Emerging'
-
-    -- Per-topic mastery map (for radar chart)
     topic_mastery JSONB DEFAULT '{}',
-    -- { "Physics": 85, "Math": 92, "Chemistry": 70, ... }
-
-    -- Raw inputs used in this calculation (for audit/replay)
     calculation_inputs JSONB DEFAULT '{}',
-
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(student_id, snapshot_date)
 );
@@ -418,56 +167,6 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_student ON student_dimension_snapshots(
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON student_dimension_snapshots(student_id, snapshot_date DESC);
 CREATE INDEX IF NOT EXISTS idx_snapshots_archetype ON student_dimension_snapshots(archetype);
 
--- -------------------------------------------------------
--- FORMULA REFERENCE (implement in your cron/edge function)
--- -------------------------------------------------------
-/*
-ALL SCORES ARE 0-100.
-
-knowledge_depth
-  irt_norm      = (avg(irt_ability_score) + 3) / 6 * 100
-  topic_breadth = (topics_with_irt > 0.5) / total_topics * 100
-  knowledge_depth = 0.65 * irt_norm + 0.35 * topic_breadth
-
-engagement_index
-  q_freq        = LEAST(questions_asked_30d / 60, 1) * 100
-  q_quality     = avg(quality_score) * 100
-  attend_rate   = sessions_attended / total_sessions * 100
-  engagement_index = 0.35*q_freq + 0.40*q_quality + 0.25*attend_rate
-
-curiosity_drive
-  complexity    = avg(event_data->>'complexity_score')::float * 100
-  experiment    = LEAST(experiment_entries_30d / 8, 1) * 100
-  cross_topic   = unique_topics_questioned / total_topics * 100
-  curiosity_drive = 0.40*complexity + 0.35*experiment + 0.25*cross_topic
-
-test_precision
-  accuracy      = avg(raw_score / max_marks) * 100
-  time_score    = 100 - ABS(avg_time_ms - 90000) / 90000 * 50
-  stability     = (1 - avg(change_count) / total_questions) * 100
-  test_precision = 0.50*accuracy + 0.25*time_score + 0.25*stability
-
-leadership_signal
-  role_score    = AVG(CASE role
-                    WHEN 'leader' THEN 100
-                    WHEN 'co-leader' THEN 80
-                    WHEN 'organizer' THEN 70
-                    WHEN 'coach' THEN 60
-                    WHEN 'participant' THEN 30
-                    ELSE 20 END)
-  trait_score   = avg(derived_traits->>'leadership')::float * 100
-  leadership_signal = 0.55*role_score + 0.45*trait_score
-
-at_risk_score (0-1, higher = more at risk)
-  engagement_drop = MAX(0, (avg_engagement_60d - engagement_index) / 100)
-  score_drop      = MAX(0, (avg_knowledge_60d - knowledge_depth) / 100)
-  streak_penalty  = CASE WHEN consistency_streak < 3 THEN 0.2 ELSE 0 END
-  at_risk_score   = LEAST(engagement_drop*0.4 + score_drop*0.4 + streak_penalty, 1)
-*/
-
--- -------------------------------------------------------
--- HELPER VIEW: Last snapshot per student (for stat cards)
--- -------------------------------------------------------
 CREATE OR REPLACE VIEW student_current_stats AS
 SELECT DISTINCT ON (s.student_id)
     s.*,
@@ -478,9 +177,6 @@ FROM student_dimension_snapshots s
 JOIN profiles p ON p.id = s.student_id
 ORDER BY s.student_id, s.snapshot_date DESC;
 
--- -------------------------------------------------------
--- DOCUMENTATION
--- -------------------------------------------------------
 COMMENT ON TABLE class_sessions IS 'Class sessions that provide context for student event and assessment records';
 COMMENT ON TABLE student_events IS 'Append-only student behavior and participation event log';
 COMMENT ON TABLE mcq_sessions IS 'Per-student MCQ assessment sessions with summary scoring';
@@ -489,9 +185,6 @@ COMMENT ON TABLE daily_activities IS 'Student extracurricular and daily activity
 COMMENT ON TABLE student_dimension_snapshots IS 'Daily computed analytics snapshot used by student cards and charts';
 COMMENT ON VIEW student_current_stats IS 'Latest analytics snapshot per student for stat card and dashboard reads';
 
--- -------------------------------------------------------
--- ACCESS + ROW LEVEL SECURITY
--- -------------------------------------------------------
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE student_events TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE mcq_sessions TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE mcq_responses TO authenticated;

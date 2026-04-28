@@ -20,6 +20,12 @@ const buildProfilePayload = (
   email: user.email ?? existingProfile?.email ?? "",
   display_name: getUserDisplayName(user) ?? existingProfile?.display_name ?? null,
   avatar_url: getManagedAvatarUrl(existingProfile?.avatar_url),
+  role: existingProfile?.role ?? null,
+  grade: existingProfile?.grade ?? null,
+  section: existingProfile?.section ?? null,
+  academic_focus: existingProfile?.academic_focus ?? null,
+  institution_name: existingProfile?.institution_name ?? null,
+  headline: existingProfile?.headline ?? null,
 });
 
 export async function syncProfileFromAuthUser(
