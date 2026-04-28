@@ -1,21 +1,75 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #e9f6fb;
+  --foreground: #0f172a;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
 }
 
 body {
+  margin: 0;
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes gradientShift {
+  0% { background-position: 0% 45%; }
+  50% { background-position: 100% 55%; }
+  100% { background-position: 0% 45%; }
+}
+
+@keyframes blobFloat {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(14px, -10px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes blobFloatDelayed {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-12px, 10px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes blobDrift {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(8px, -12px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+.animate-gradient-shift {
+  animation: gradientShift 16s ease-in-out infinite;
+}
+
+.animate-blob-float {
+  animation: blobFloat 9s ease-in-out infinite;
+}
+
+.animate-blob-float-delayed {
+  animation: blobFloatDelayed 11s ease-in-out infinite;
+}
+
+.animate-blob-drift {
+  animation: blobDrift 12s ease-in-out infinite;
+}
+
+@keyframes blobSway {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-10px, 9px, 0) scale(1.04); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+.animate-blob-sway {
+  animation: blobSway 10s ease-in-out infinite;
+}
+
