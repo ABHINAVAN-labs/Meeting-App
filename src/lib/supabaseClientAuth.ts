@@ -30,7 +30,31 @@ async function clearBrokenClientSession(supabase: ClientSupabaseLike) {
 export async function safeGetClientSession<TSession>(
   supabase: ClientSupabaseLike
 ) {
-  const result = await supabase.auth.getSession();
+  let result: Awaited<ReturnType<ClientSupabaseAuth["getSession"]>>;
+
+  try {
+    result = await supabase.auth.getSession();
+  } catch (error) {
+    const message =
+      typeof error === "object" &&
+      error !== null &&
+      "message" in error &&
+      typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : undefined;
+
+    if (!isRefreshTokenErrorMessage(message)) {
+      throw error;
+    }
+
+    await clearBrokenClientSession(supabase);
+
+    return {
+      data: {
+        session: null,
+      },
+    };
+  }
 
   if (!isRefreshTokenErrorMessage(result.error?.message)) {
     return result as { data: { session: TSession | null } };
@@ -46,7 +70,31 @@ export async function safeGetClientSession<TSession>(
 }
 
 export async function safeGetClientUser<TUser>(supabase: ClientSupabaseLike) {
-  const result = await supabase.auth.getUser();
+  let result: Awaited<ReturnType<ClientSupabaseAuth["getUser"]>>;
+
+  try {
+    result = await supabase.auth.getUser();
+  } catch (error) {
+    const message =
+      typeof error === "object" &&
+      error !== null &&
+      "message" in error &&
+      typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : undefined;
+
+    if (!isRefreshTokenErrorMessage(message)) {
+      throw error;
+    }
+
+    await clearBrokenClientSession(supabase);
+
+    return {
+      data: {
+        user: null,
+      },
+    };
+  }
 
   if (!isRefreshTokenErrorMessage(result.error?.message)) {
     return result as { data: { user: TUser | null } };
