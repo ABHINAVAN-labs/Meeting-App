@@ -56,14 +56,6 @@ export default function AuthForm({
       transition={{ duration: 0.55, ease: "easeOut" }}
       className="w-full max-w-xl rounded-3xl border border-white/20 bg-white/10 p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)] backdrop-blur-2xl sm:p-8"
     >
-      <motion.p
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.4 }}
-        className="text-sm font-medium text-cyan-200/90"
-      >
-        Trusted by 5000+ learners
-      </motion.p>
       <motion.h1
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
