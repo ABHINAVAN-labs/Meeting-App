@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Lenis from "lenis";
 import { createClient } from "@/utils/supabase/client";
 import { getAuthCallbackUrl } from "@/lib/authRedirect";
+import { safeGetClientSession } from "@/lib/supabaseClientAuth";
 import AuthForm from "@/components/auth/AuthForm";
 import { authRequest, type AuthMode } from "@/lib/authApi";
 
@@ -23,6 +24,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function AuthPage({ initialMode }: AuthPageProps) {
   const router = useRouter();
+  const [supabase] = useState(() => createClient());
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -45,6 +47,28 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
       lenis.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const normalizeClientSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await safeGetClientSession(supabase);
+
+        if (cancelled || !session) {
+          return;
+        }
+      } catch {}
+    };
+
+    normalizeClientSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   const modePath = useMemo(() => (mode === "login" ? "/sign-in" : "/sign-up"), [mode]);
 
@@ -115,7 +139,6 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
     setErrors({});
     setOauthLoading(provider);
     try {
-      const supabase = createClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
