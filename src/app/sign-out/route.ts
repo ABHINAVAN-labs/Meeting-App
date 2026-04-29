@@ -10,7 +10,7 @@ async function handleSignOut() {
     process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ||
     "http://localhost:3000";
 
-  return NextResponse.redirect(new URL("/sign-in", appUrl));
+  return NextResponse.redirect(new URL("/sign-in", appUrl), 303);
 }
 
 export async function POST() {
