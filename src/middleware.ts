@@ -4,7 +4,10 @@ import { updateSession } from "@/utils/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
   // Optional: keep homepage public
-  if (request.nextUrl.pathname === "/") {
+  if (
+    request.nextUrl.pathname === "/" ||
+    request.nextUrl.pathname.startsWith("/api/auth")
+  ) {
     return NextResponse.next();
   }
 
@@ -26,6 +29,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next|favicon.ico|.*\\..*|sign-in|sign-up|sign-out|auth/callback).*)",
+    "/((?!_next|favicon.ico|.*\\..*|sign-in|sign-up|sign-out|auth/callback|api/auth).*)",
   ],
 };

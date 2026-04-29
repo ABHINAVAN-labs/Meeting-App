@@ -4,7 +4,11 @@ import { redirect } from "next/navigation";
 import DeleteAccountButton from "@/app/profile/DeleteAccountButton";
 import ProfileAvatarEditor from "@/app/profile/ProfileAvatarEditor";
 import { getOrCreateCurrentProfile } from "@/lib/profileStore";
-import { getProfileDisplayName, getProfileInitial } from "@/lib/profile";
+import {
+  getProfileDisplayName,
+  getProfileInitial,
+  getProfileSubtitle,
+} from "@/lib/profile";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +21,7 @@ export default async function ProfilePage() {
 
   const displayName = getProfileDisplayName(profile);
   const initial = getProfileInitial(displayName);
+  const subtitle = getProfileSubtitle(profile);
 
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-10 text-white">
@@ -37,6 +42,7 @@ export default async function ProfilePage() {
               User Profile
             </p>
             <h1 className="mt-2 text-4xl font-bold">{displayName}</h1>
+            {subtitle ? <p className="mt-2 text-zinc-400">{subtitle}</p> : null}
           </div>
         </div>
 
@@ -57,8 +63,32 @@ export default async function ProfilePage() {
               <dd className="mt-1 text-lg">{profile.display_name ?? "Not set"}</dd>
             </div>
             <div className="rounded-xl bg-zinc-950 p-4">
+              <dt className="text-sm text-zinc-400">Role</dt>
+              <dd className="mt-1 text-lg capitalize">{profile.role ?? "Not set"}</dd>
+            </div>
+            <div className="rounded-xl bg-zinc-950 p-4">
               <dt className="text-sm text-zinc-400">Email</dt>
               <dd className="mt-1 text-lg">{profile.email}</dd>
+            </div>
+            <div className="rounded-xl bg-zinc-950 p-4">
+              <dt className="text-sm text-zinc-400">Institution</dt>
+              <dd className="mt-1 text-lg">{profile.institution_name ?? "Not set"}</dd>
+            </div>
+            <div className="rounded-xl bg-zinc-950 p-4">
+              <dt className="text-sm text-zinc-400">Grade</dt>
+              <dd className="mt-1 text-lg">{profile.grade ?? "Not set"}</dd>
+            </div>
+            <div className="rounded-xl bg-zinc-950 p-4">
+              <dt className="text-sm text-zinc-400">Section</dt>
+              <dd className="mt-1 text-lg">{profile.section ?? "Not set"}</dd>
+            </div>
+            <div className="rounded-xl bg-zinc-950 p-4">
+              <dt className="text-sm text-zinc-400">Academic focus</dt>
+              <dd className="mt-1 text-lg">{profile.academic_focus ?? "Not set"}</dd>
+            </div>
+            <div className="rounded-xl bg-zinc-950 p-4 md:col-span-2">
+              <dt className="text-sm text-zinc-400">Headline</dt>
+              <dd className="mt-1 text-lg">{profile.headline ?? "Not set"}</dd>
             </div>
             <div className="rounded-xl bg-zinc-950 p-4">
               <dt className="text-sm text-zinc-400">User ID</dt>

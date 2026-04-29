@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { hasUserChosenName } from "@/lib/userProfile";
 import { createClient } from "@/utils/supabase/server";
+import {
+  clearServerSupabaseAuthCookies,
+  isInvalidRefreshTokenError,
+} from "@/lib/supabaseAuth";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -12,20 +16,28 @@ export async function GET(request: Request) {
   }
 
   if (code) {
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error,
-    } = await supabase.auth.exchangeCodeForSession(code);
+    try {
+      const supabase = await createClient();
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (!error) {
-      const user = session?.user;
+      if (!error) {
+        const user = session?.user;
 
-      if (user && !hasUserChosenName(user)) {
-        next = "/onboarding";
+        if (user && !hasUserChosenName(user)) {
+          next = "/onboarding";
+        }
+
+        return NextResponse.redirect(`${origin}${next}`);
+      }
+    } catch (error) {
+      if (!isInvalidRefreshTokenError(error)) {
+        throw error;
       }
 
-      return NextResponse.redirect(`${origin}${next}`);
+      await clearServerSupabaseAuthCookies();
     }
   }
 

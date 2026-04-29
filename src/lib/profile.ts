@@ -5,6 +5,12 @@ export type UserProfileRecord = {
   email: string;
   display_name: string | null;
   avatar_url: string | null;
+  role: "student" | "teacher" | "admin" | null;
+  grade: string | null;
+  section: string | null;
+  academic_focus: string | null;
+  institution_name: string | null;
+  headline: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -36,6 +42,27 @@ export const getManagedAvatarUrl = (
 export const getProfileDisplayName = (
   profile: Pick<UserProfileRecord, "display_name" | "email"> | null | undefined
 ) => profile?.display_name ?? profile?.email ?? "User";
+
+export const getProfileSubtitle = (
+  profile:
+    | Pick<UserProfileRecord, "grade" | "section" | "academic_focus" | "role">
+    | null
+    | undefined
+) => {
+  if (!profile) {
+    return null;
+  }
+
+  if (profile.role === "student") {
+    const parts = [profile.grade, profile.section, profile.academic_focus].filter(
+      Boolean
+    );
+
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+
+  return profile.academic_focus ?? null;
+};
 
 export const getProfileInitial = (name: string | null | undefined) =>
   (name?.trim().charAt(0) || "U").toUpperCase();

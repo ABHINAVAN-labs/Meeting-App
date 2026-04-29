@@ -13,6 +13,12 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [supabase] = useState(() => createClient());
   const [nickname, setNickname] = useState("");
+  const [role, setRole] = useState<"student" | "teacher">("student");
+  const [grade, setGrade] = useState("");
+  const [section, setSection] = useState("");
+  const [academicFocus, setAcademicFocus] = useState("");
+  const [institutionName, setInstitutionName] = useState("");
+  const [headline, setHeadline] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,9 +49,19 @@ export default function OnboardingPage() {
     event.preventDefault();
 
     const trimmedNickname = nickname.trim();
+    const trimmedGrade = grade.trim();
+    const trimmedSection = section.trim();
+    const trimmedAcademicFocus = academicFocus.trim();
+    const trimmedInstitutionName = institutionName.trim();
+    const trimmedHeadline = headline.trim();
 
     if (!trimmedNickname) {
       setError("Please enter the name you'd like us to use.");
+      return;
+    }
+
+    if (!trimmedInstitutionName) {
+      setError("Please enter your school or institution name.");
       return;
     }
 
@@ -75,6 +91,12 @@ export default function OnboardingPage() {
           email: user.email ?? "",
           display_name: trimmedNickname,
           avatar_url: null,
+          role,
+          grade: role === "student" ? trimmedGrade || null : null,
+          section: role === "student" ? trimmedSection || null : null,
+          academic_focus: trimmedAcademicFocus || null,
+          institution_name: trimmedInstitutionName,
+          headline: trimmedHeadline || null,
         },
         { onConflict: "id" }
       );
@@ -100,37 +122,134 @@ export default function OnboardingPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-8 text-white shadow-2xl shadow-black/30">
+      <div className="w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900 p-8 text-white shadow-2xl shadow-black/30">
         <p className="mb-3 text-sm uppercase tracking-[0.3em] text-zinc-500">
           One quick step
         </p>
-        <h1 className="mb-3 text-3xl font-bold">What should we call you?</h1>
+        <h1 className="mb-3 text-3xl font-bold">Set up your profile</h1>
         <p className="mb-6 text-sm text-zinc-400">
-          Choose the name or nickname you want to see inside your dashboard.
+          Add the details we need to personalize your dashboard and student card.
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           {error && (
             <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
               {error}
             </div>
           )}
 
-          <div>
-            <label htmlFor="nickname" className="mb-2 block text-sm text-zinc-400">
-              Name or nickname
-            </label>
-            <input
-              id="nickname"
-              type="text"
-              value={nickname}
-              onChange={(event) => setNickname(event.target.value)}
-              placeholder="Alex"
-              maxLength={40}
-              autoFocus
-              required
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label htmlFor="nickname" className="mb-2 block text-sm text-zinc-400">
+                Name or nickname
+              </label>
+              <input
+                id="nickname"
+                type="text"
+                value={nickname}
+                onChange={(event) => setNickname(event.target.value)}
+                placeholder="Arjun Mehta"
+                maxLength={40}
+                autoFocus
+                required
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="role" className="mb-2 block text-sm text-zinc-400">
+                Role
+              </label>
+              <select
+                id="role"
+                value={role}
+                onChange={(event) => setRole(event.target.value as "student" | "teacher")}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="student">Student</option>
+                <option value="teacher">Teacher</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="institution" className="mb-2 block text-sm text-zinc-400">
+                School or institution
+              </label>
+              <input
+                id="institution"
+                type="text"
+                value={institutionName}
+                onChange={(event) => setInstitutionName(event.target.value)}
+                placeholder="Learnos Academy"
+                maxLength={255}
+                required
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {role === "student" ? (
+              <>
+                <div>
+                  <label htmlFor="grade" className="mb-2 block text-sm text-zinc-400">
+                    Grade
+                  </label>
+                  <input
+                    id="grade"
+                    type="text"
+                    value={grade}
+                    onChange={(event) => setGrade(event.target.value)}
+                    placeholder="Grade 11"
+                    maxLength={20}
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="section" className="mb-2 block text-sm text-zinc-400">
+                    Section
+                  </label>
+                  <input
+                    id="section"
+                    type="text"
+                    value={section}
+                    onChange={(event) => setSection(event.target.value)}
+                    placeholder="Section B"
+                    maxLength={50}
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </>
+            ) : null}
+
+            <div>
+              <label htmlFor="focus" className="mb-2 block text-sm text-zinc-400">
+                {role === "student" ? "Academic focus" : "Subject or specialization"}
+              </label>
+              <input
+                id="focus"
+                type="text"
+                value={academicFocus}
+                onChange={(event) => setAcademicFocus(event.target.value)}
+                placeholder={role === "student" ? "Physics Major" : "Physics"}
+                maxLength={100}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label htmlFor="headline" className="mb-2 block text-sm text-zinc-400">
+                Headline
+              </label>
+              <input
+                id="headline"
+                type="text"
+                value={headline}
+                onChange={(event) => setHeadline(event.target.value)}
+                placeholder="Curious builder, improving fast"
+                maxLength={255}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
 
           <button
@@ -138,7 +257,7 @@ export default function OnboardingPage() {
             disabled={saving}
             className="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-800"
           >
-            {saving ? "Saving..." : "Continue to dashboard"}
+            {saving ? "Saving..." : "Save profile and continue"}
           </button>
         </form>
       </div>

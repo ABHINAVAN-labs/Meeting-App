@@ -2,14 +2,29 @@ import { cookies } from "next/headers";
 
 const SUPABASE_AUTH_COOKIE_FRAGMENT = "-auth-token";
 
+const getErrorMessage = (error: unknown): string | null => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof (error as { message?: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+
+  return null;
+};
+
 export const isInvalidRefreshTokenError = (error: unknown) => {
-  if (!(error instanceof Error)) {
+  const message = getErrorMessage(error);
+
+  if (!message) {
     return false;
   }
 
   return (
-    error.message.includes("Invalid Refresh Token") ||
-    error.message.includes("Refresh Token Not Found")
+    message.includes("Invalid Refresh Token") ||
+    message.includes("Refresh Token Not Found")
   );
 };
 
