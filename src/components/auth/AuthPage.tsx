@@ -7,7 +7,7 @@ import { createClient } from "@/utils/supabase/client";
 import { getAuthCallbackUrl } from "@/lib/authRedirect";
 import { safeGetClientSession } from "@/lib/supabaseClientAuth";
 import AuthForm from "@/components/auth/AuthForm";
-import { authRequest, type AuthMode } from "@/lib/authApi";
+import { authRequest, requestPasswordReset, type AuthMode } from "@/lib/authApi";
 
 type AuthPageProps = {
   initialMode: AuthMode;
@@ -165,6 +165,36 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
     }
   };
 
+  const onForgotPassword = async () => {
+    const email = values.email.trim();
+
+    if (!email) {
+      setErrors({ email: "Enter your email first, then click Forgot password." });
+      return;
+    }
+
+    if (!EMAIL_REGEX.test(email)) {
+      setErrors({ email: "Enter a valid email address." });
+      return;
+    }
+
+    setLoading(true);
+    setErrors({});
+
+    try {
+      await requestPasswordReset({ email });
+      setErrors({
+        submit: "Reset link sent. Check your inbox and spam folder for the password reset email.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to send reset email right now.";
+      setErrors({ submit: message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#05070f] px-4 py-10 sm:px-6">
       <div className="pointer-events-none absolute inset-0">
@@ -188,6 +218,7 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
             onValueChange={onValueChange}
             onTogglePassword={() => setShowPassword((current) => !current)}
             onOAuth={onOAuth}
+            onForgotPassword={onForgotPassword}
           />
         </section>
       </div>

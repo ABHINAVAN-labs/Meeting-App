@@ -26,6 +26,7 @@ type AuthFormProps = {
   onValueChange: (field: "name" | "email" | "password", value: string) => void;
   onTogglePassword: () => void;
   onOAuth: (provider: "google" | "github") => void;
+  onForgotPassword: () => void;
 };
 
 const inputClassName =
@@ -45,6 +46,7 @@ export default function AuthForm({
   onValueChange,
   onTogglePassword,
   onOAuth,
+  onForgotPassword,
 }: AuthFormProps) {
   const isLogin = mode === "login";
   const isOAuthBusy = oauthLoading !== null;
@@ -179,7 +181,12 @@ export default function AuthForm({
         </div>
 
         {isLogin && (
-          <button type="button" className="text-sm font-semibold text-cyan-300 transition hover:text-cyan-200">
+          <button
+            type="button"
+            onClick={onForgotPassword}
+            disabled={loading || isOAuthBusy}
+            className="text-sm font-semibold text-cyan-300 transition hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-70"
+          >
             Forgot password?
           </button>
         )}
