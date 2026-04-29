@@ -23,7 +23,6 @@ const buildProfilePayload = (
   role: existingProfile?.role ?? null,
   grade: existingProfile?.grade ?? null,
   section: existingProfile?.section ?? null,
-  academic_focus: existingProfile?.academic_focus ?? null,
   institution_name: existingProfile?.institution_name ?? null,
   bio: existingProfile?.bio ?? null,
 });
@@ -107,3 +106,4 @@ export async function getOrCreateCurrentProfile() {
 
   return { user, profile };
 }
+

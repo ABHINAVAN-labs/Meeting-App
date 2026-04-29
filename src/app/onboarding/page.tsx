@@ -13,10 +13,6 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [supabase] = useState(() => createClient());
   const [nickname, setNickname] = useState("");
-  const [role, setRole] = useState<"student" | "teacher">("student");
-  const [grade, setGrade] = useState("");
-  const [section, setSection] = useState("");
-  const [institutionName, setInstitutionName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,17 +43,9 @@ export default function OnboardingPage() {
     event.preventDefault();
 
     const trimmedNickname = nickname.trim();
-    const trimmedGrade = grade.trim();
-    const trimmedSection = section.trim();
-    const trimmedInstitutionName = institutionName.trim();
 
     if (!trimmedNickname) {
       setError("Please enter the name you'd like us to use.");
-      return;
-    }
-
-    if (!trimmedInstitutionName) {
-      setError("Please enter your school or institution name.");
       return;
     }
 
@@ -87,10 +75,6 @@ export default function OnboardingPage() {
           email: user.email ?? "",
           display_name: trimmedNickname,
           avatar_url: null,
-          role,
-          grade: role === "student" ? trimmedGrade || null : null,
-          section: role === "student" ? trimmedSection || null : null,
-          institution_name: trimmedInstitutionName,
         },
         { onConflict: "id" }
       );
@@ -120,10 +104,7 @@ export default function OnboardingPage() {
         <p className="mb-3 text-sm uppercase tracking-[0.3em] text-zinc-500">
           One quick step
         </p>
-        <h1 className="mb-3 text-3xl font-bold">Set up your profile</h1>
-        <p className="mb-6 text-sm text-zinc-400">
-          Add the details we need to personalize your dashboard and student card.
-        </p>
+        <h1 className="mb-6 text-3xl font-bold">What should we call you?</h1>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {error && (
@@ -132,8 +113,7 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="md:col-span-2">
+          <div>
               <label htmlFor="nickname" className="mb-2 block text-sm text-zinc-400">
                 Name or nickname
               </label>
@@ -148,73 +128,6 @@ export default function OnboardingPage() {
                 required
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-            </div>
-
-            <div>
-              <label htmlFor="role" className="mb-2 block text-sm text-zinc-400">
-                Role
-              </label>
-              <select
-                id="role"
-                value={role}
-                onChange={(event) => setRole(event.target.value as "student" | "teacher")}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="student">Student</option>
-                <option value="teacher">Teacher</option>
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="institution" className="mb-2 block text-sm text-zinc-400">
-                School or institution
-              </label>
-              <input
-                id="institution"
-                type="text"
-                value={institutionName}
-                onChange={(event) => setInstitutionName(event.target.value)}
-                placeholder="Learnos Academy"
-                maxLength={255}
-                required
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            {role === "student" ? (
-              <>
-                <div>
-                  <label htmlFor="grade" className="mb-2 block text-sm text-zinc-400">
-                    Grade
-                  </label>
-                  <input
-                    id="grade"
-                    type="text"
-                    value={grade}
-                    onChange={(event) => setGrade(event.target.value)}
-                    placeholder="Grade 11"
-                    maxLength={20}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="section" className="mb-2 block text-sm text-zinc-400">
-                    Section
-                  </label>
-                  <input
-                    id="section"
-                    type="text"
-                    value={section}
-                    onChange={(event) => setSection(event.target.value)}
-                    placeholder="Section B"
-                    maxLength={50}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </>
-            ) : null}
-
           </div>
 
           <button
