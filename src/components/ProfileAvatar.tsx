@@ -47,9 +47,9 @@ export default function ProfileAvatar({
       className={`relative flex items-center justify-center overflow-hidden rounded-full text-white ${sizeClassName} ${textClassName}`}
       style={{ backgroundColor: showImage ? "transparent" : fallbackColor }}
     >
-      {showImage ? (
+      {showImage && displayAvatarUrl ? (
         <Image
-          src={displayAvatarUrl ?? undefined}
+          src={displayAvatarUrl}
           alt={alt}
           fill
           sizes="64px"
