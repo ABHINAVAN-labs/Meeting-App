@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import DeleteAccountButton from "@/app/profile/DeleteAccountButton";
 import ProfileAvatarEditor from "@/app/profile/ProfileAvatarEditor";
+import ProfileDetailsEditor from "@/app/profile/ProfileDetailsEditor";
 import { getOrCreateCurrentProfile } from "@/lib/profileStore";
 import {
   getProfileDisplayName,
@@ -58,37 +59,14 @@ export default async function ProfilePage() {
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
           <h2 className="text-xl font-semibold">Account details</h2>
           <dl className="mt-6 grid gap-4 md:grid-cols-2">
-            <div className="rounded-xl bg-zinc-950 p-4">
-              <dt className="text-sm text-zinc-400">Display name</dt>
-              <dd className="mt-1 text-lg">{profile.display_name ?? "Not set"}</dd>
-            </div>
-            <div className="rounded-xl bg-zinc-950 p-4">
-              <dt className="text-sm text-zinc-400">Role</dt>
-              <dd className="mt-1 text-lg capitalize">{profile.role ?? "Not set"}</dd>
-            </div>
+            <ProfileDetailsEditor
+              userId={profile.id}
+              initialDisplayName={profile.display_name}
+              initialBio={profile.bio}
+            />
             <div className="rounded-xl bg-zinc-950 p-4">
               <dt className="text-sm text-zinc-400">Email</dt>
               <dd className="mt-1 text-lg">{profile.email}</dd>
-            </div>
-            <div className="rounded-xl bg-zinc-950 p-4">
-              <dt className="text-sm text-zinc-400">Institution</dt>
-              <dd className="mt-1 text-lg">{profile.institution_name ?? "Not set"}</dd>
-            </div>
-            <div className="rounded-xl bg-zinc-950 p-4">
-              <dt className="text-sm text-zinc-400">Grade</dt>
-              <dd className="mt-1 text-lg">{profile.grade ?? "Not set"}</dd>
-            </div>
-            <div className="rounded-xl bg-zinc-950 p-4">
-              <dt className="text-sm text-zinc-400">Section</dt>
-              <dd className="mt-1 text-lg">{profile.section ?? "Not set"}</dd>
-            </div>
-            <div className="rounded-xl bg-zinc-950 p-4">
-              <dt className="text-sm text-zinc-400">Academic focus</dt>
-              <dd className="mt-1 text-lg">{profile.academic_focus ?? "Not set"}</dd>
-            </div>
-            <div className="rounded-xl bg-zinc-950 p-4 md:col-span-2">
-              <dt className="text-sm text-zinc-400">Bio</dt>
-              <dd className="mt-1 text-lg">{profile.bio ?? "Not set"}</dd>
             </div>
             <div className="rounded-xl bg-zinc-950 p-4">
               <dt className="text-sm text-zinc-400">User ID</dt>
@@ -103,17 +81,37 @@ export default async function ProfilePage() {
           </dl>
         </section>
 
-        <section className="rounded-2xl border border-red-500/20 bg-zinc-900 p-6">
-          <h2 className="text-xl font-semibold text-red-300">Danger zone</h2>
-          <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-            Deleting your account permanently removes your profile and deletes
-            your Supabase auth user. This action cannot be undone.
-          </p>
-          <div className="mt-6">
-            <DeleteAccountButton />
-          </div>
-        </section>
+        <div className="grid gap-6 md:grid-cols-2">
+          <section className="rounded-2xl border border-red-500/20 bg-zinc-900 p-6">
+            <h2 className="text-xl font-semibold text-red-300">Danger zone</h2>
+            <p className="mt-2 text-sm text-zinc-400">
+              Deleting your account permanently removes your profile and deletes
+              your Supabase auth user. This action cannot be undone.
+            </p>
+            <div className="mt-6">
+              <DeleteAccountButton />
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+            <h2 className="text-xl font-semibold">Session</h2>
+            <p className="mt-2 text-sm text-zinc-400">
+              Sign out of your current account on this device.
+            </p>
+            <div className="mt-6">
+              <form action="/sign-out" method="post">
+                <button
+                  type="submit"
+                  className="rounded-lg bg-zinc-800 px-4 py-2 transition-colors hover:bg-zinc-700"
+                >
+                  Sign Out
+                </button>
+              </form>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   );
 }
+

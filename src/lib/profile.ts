@@ -1,4 +1,4 @@
-import type { User } from "@supabase/supabase-js";
+﻿import type { User } from "@supabase/supabase-js";
 
 export type UserProfileRecord = {
   id: string;
@@ -8,7 +8,6 @@ export type UserProfileRecord = {
   role: "student" | "teacher" | "admin" | null;
   grade: string | null;
   section: string | null;
-  academic_focus: string | null;
   institution_name: string | null;
   bio: string | null;
   created_at: string;
@@ -44,24 +43,19 @@ export const getProfileDisplayName = (
 ) => profile?.display_name ?? profile?.email ?? "User";
 
 export const getProfileSubtitle = (
-  profile:
-    | Pick<UserProfileRecord, "grade" | "section" | "academic_focus" | "role">
-    | null
-    | undefined
+  profile: Pick<UserProfileRecord, "grade" | "section" | "role"> | null | undefined
 ) => {
   if (!profile) {
     return null;
   }
 
   if (profile.role === "student") {
-    const parts = [profile.grade, profile.section, profile.academic_focus].filter(
-      Boolean
-    );
+    const parts = [profile.grade, profile.section].filter(Boolean);
 
-    return parts.length > 0 ? parts.join(" · ") : null;
+    return parts.length > 0 ? parts.join(" | ") : null;
   }
 
-  return profile.academic_focus ?? null;
+  return profile.role ? profile.role[0].toUpperCase() + profile.role.slice(1) : null;
 };
 
 export const getProfileInitial = (name: string | null | undefined) =>
