@@ -413,8 +413,8 @@ export default function StudentAnalyticsWorkspace({
                     .filter(Boolean)
                     .join(" · ") || "Profile metadata not complete yet"}
                 </p>
-                {card?.profile.headline ? (
-                  <p className="mt-3 text-sm text-zinc-300">{card.profile.headline}</p>
+                {card?.profile.bio ? (
+                  <p className="mt-3 text-sm text-zinc-300">{card.profile.bio}</p>
                 ) : null}
               </div>
 

@@ -87,8 +87,8 @@ export default async function ProfilePage() {
               <dd className="mt-1 text-lg">{profile.academic_focus ?? "Not set"}</dd>
             </div>
             <div className="rounded-xl bg-zinc-950 p-4 md:col-span-2">
-              <dt className="text-sm text-zinc-400">Headline</dt>
-              <dd className="mt-1 text-lg">{profile.headline ?? "Not set"}</dd>
+              <dt className="text-sm text-zinc-400">Bio</dt>
+              <dd className="mt-1 text-lg">{profile.bio ?? "Not set"}</dd>
             </div>
             <div className="rounded-xl bg-zinc-950 p-4">
               <dt className="text-sm text-zinc-400">User ID</dt>

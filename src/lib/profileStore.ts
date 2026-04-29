@@ -25,7 +25,7 @@ const buildProfilePayload = (
   section: existingProfile?.section ?? null,
   academic_focus: existingProfile?.academic_focus ?? null,
   institution_name: existingProfile?.institution_name ?? null,
-  headline: existingProfile?.headline ?? null,
+  bio: existingProfile?.bio ?? null,
 });
 
 export async function syncProfileFromAuthUser(
