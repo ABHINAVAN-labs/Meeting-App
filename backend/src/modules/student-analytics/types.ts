@@ -10,7 +10,7 @@ export type StudentAnalyticsProfile = {
   section: string | null;
   academicFocus: string | null;
   institutionName: string | null;
-  headline: string | null;
+  bio: string | null;
 };
 
 export type StudentCardResponse = {

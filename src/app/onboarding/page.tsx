@@ -16,9 +16,7 @@ export default function OnboardingPage() {
   const [role, setRole] = useState<"student" | "teacher">("student");
   const [grade, setGrade] = useState("");
   const [section, setSection] = useState("");
-  const [academicFocus, setAcademicFocus] = useState("");
   const [institutionName, setInstitutionName] = useState("");
-  const [headline, setHeadline] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +49,7 @@ export default function OnboardingPage() {
     const trimmedNickname = nickname.trim();
     const trimmedGrade = grade.trim();
     const trimmedSection = section.trim();
-    const trimmedAcademicFocus = academicFocus.trim();
     const trimmedInstitutionName = institutionName.trim();
-    const trimmedHeadline = headline.trim();
 
     if (!trimmedNickname) {
       setError("Please enter the name you'd like us to use.");
@@ -94,9 +90,7 @@ export default function OnboardingPage() {
           role,
           grade: role === "student" ? trimmedGrade || null : null,
           section: role === "student" ? trimmedSection || null : null,
-          academic_focus: trimmedAcademicFocus || null,
           institution_name: trimmedInstitutionName,
-          headline: trimmedHeadline || null,
         },
         { onConflict: "id" }
       );
@@ -221,35 +215,6 @@ export default function OnboardingPage() {
               </>
             ) : null}
 
-            <div>
-              <label htmlFor="focus" className="mb-2 block text-sm text-zinc-400">
-                {role === "student" ? "Academic focus" : "Subject or specialization"}
-              </label>
-              <input
-                id="focus"
-                type="text"
-                value={academicFocus}
-                onChange={(event) => setAcademicFocus(event.target.value)}
-                placeholder={role === "student" ? "Physics Major" : "Physics"}
-                maxLength={100}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label htmlFor="headline" className="mb-2 block text-sm text-zinc-400">
-                Headline
-              </label>
-              <input
-                id="headline"
-                type="text"
-                value={headline}
-                onChange={(event) => setHeadline(event.target.value)}
-                placeholder="Curious builder, improving fast"
-                maxLength={255}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
           </div>
 
           <button

@@ -19,7 +19,7 @@ type DbProfileRow = {
   section: string | null;
   academic_focus: string | null;
   institution_name: string | null;
-  headline: string | null;
+  bio: string | null;
 };
 
 class ForbiddenError extends Error {}
@@ -36,7 +36,7 @@ function mapProfile(row: DbProfileRow): StudentAnalyticsProfile {
     section: row.section,
     academicFocus: row.academic_focus,
     institutionName: row.institution_name,
-    headline: row.headline,
+    bio: row.bio,
   };
 }
 
@@ -56,7 +56,7 @@ async function getProfileById(
         section,
         academic_focus,
         institution_name,
-        headline
+        bio
       FROM profiles
       WHERE id = $1
     `,

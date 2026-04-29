@@ -37,7 +37,7 @@ export type StudentCardPayload = {
     section: string | null;
     academicFocus: string | null;
     institutionName: string | null;
-    headline: string | null;
+    bio: string | null;
   };
   snapshot: Record<string, unknown> | null;
   recentActivityBadges: string[];
