@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { getManagedAvatarUrl, getProfileAvatarColor } from "@/lib/profile";
 
@@ -47,9 +48,12 @@ export default function ProfileAvatar({
       style={{ backgroundColor: showImage ? "transparent" : fallbackColor }}
     >
       {showImage ? (
-        <img
+        <Image
           src={displayAvatarUrl ?? undefined}
           alt={alt}
+          fill
+          sizes="64px"
+          unoptimized
           className="absolute inset-0 block h-full w-full scale-[1.03] object-cover"
           onLoad={() => onImageAvailabilityChange?.(true)}
           onError={() => setHasImageError(true)}

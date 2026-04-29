@@ -109,11 +109,21 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
     setErrors({});
 
     try {
-      await authRequest(mode, {
+      const authResult = await authRequest(mode, {
         email: values.email.trim(),
         password: values.password,
         ...(mode === "signup" ? { name: values.name.trim() } : {}),
       });
+
+      if (mode === "signup" && !(authResult as { session?: unknown }).session) {
+        setMode("login");
+        setValues((current) => ({ ...current, password: "" }));
+        setErrors({
+          submit:
+            "Account created. Please verify your email, then sign in.",
+        });
+        return;
+      }
 
       router.push("/dashboard");
       router.refresh();

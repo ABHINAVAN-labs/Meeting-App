@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { UserProfileRecord } from "@/lib/profile";
 import {
@@ -49,7 +49,7 @@ export default function StudentAnalyticsWorkspace({
   const [activityError, setActivityError] = useState<string | null>(null);
   const [activitySaving, setActivitySaving] = useState(false);
 
-  const refreshCard = async () => {
+  const refreshCard = useCallback(async () => {
     setCardLoading(true);
     setCardError(null);
 
@@ -61,11 +61,11 @@ export default function StudentAnalyticsWorkspace({
     } finally {
       setCardLoading(false);
     }
-  };
+  }, [profile.id]);
 
   useEffect(() => {
     void refreshCard();
-  }, [profile.id]);
+  }, [refreshCard]);
 
   const handleEventSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
