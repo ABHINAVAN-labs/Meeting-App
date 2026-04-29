@@ -8,6 +8,10 @@ export type AuthPayload = {
   name?: string;
 };
 
+export type ResetPasswordPayload = {
+  email: string;
+};
+
 type AuthSuccess = {
   token?: string;
   session?: string;
@@ -21,6 +25,8 @@ const getEndpoint = (mode: AuthMode) => {
   const path = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
   return `${API_BASE_URL}${path}`;
 };
+
+const getResetPasswordEndpoint = () => `${API_BASE_URL}/api/auth/reset-password`;
 
 const getErrorMessage = async (response: Response) => {
   try {
@@ -60,5 +66,19 @@ export async function authRequest(mode: AuthMode, payload: AuthPayload) {
 
   localStorage.setItem("lumina_auth_session", JSON.stringify(data));
   return data;
+}
+
+export async function requestPasswordReset(payload: ResetPasswordPayload) {
+  const response = await fetch(getResetPasswordEndpoint(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response));
+  }
 }
 
