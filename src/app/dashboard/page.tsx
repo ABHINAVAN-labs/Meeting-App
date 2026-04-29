@@ -47,15 +47,6 @@ export default async function Dashboard() {
               Profile
             </span>
           </Link>
-
-          <form action="/sign-out" method="post">
-            <button
-              type="submit"
-              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
-            >
-              Sign Out
-            </button>
-          </form>
         </div>
       </nav>
 
