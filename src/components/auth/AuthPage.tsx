@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -119,8 +119,7 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
         setMode("login");
         setValues((current) => ({ ...current, password: "" }));
         setErrors({
-          submit:
-            "Account created. Please verify your email, then sign in.",
+          submit: "Account created. Please verify your email, then sign in.",
         });
         return;
       }
@@ -195,4 +194,3 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
     </main>
   );
 }
-
