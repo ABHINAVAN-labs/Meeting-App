@@ -894,3 +894,192 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+.home-shell,
+.landing-shell,
+.ready-shell {
+  min-height: 100vh;
+}
+
+.home-shell {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.home-card {
+  display: grid;
+  gap: 20px;
+  justify-items: center;
+  width: min(420px, 100%);
+  padding: 32px;
+  border-radius: 24px;
+}
+
+.home-card h1 {
+  margin: 0;
+}
+
+.home-continue {
+  display: inline-grid;
+  width: min(240px, 100%);
+  place-items: center;
+  text-align: center;
+  text-decoration: none;
+}
+
+.landing-shell,
+.ready-shell {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+.landing-shell .join-card,
+.ready-shell .preview-card {
+  width: min(520px, 100%);
+  height: calc(100vh - 48px);
+}
+
+.landing-shell .join-card {
+  max-height: 760px;
+}
+
+.ready-shell .preview-card {
+  max-height: 760px;
+}
+
+.primary-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+}
+.lobby-join {
+  display: inline-grid;
+  width: 100%;
+  place-items: center;
+  text-align: center;
+  text-decoration: none;
+}
+
+.room-shell {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+.room-shell .capture-card {
+  width: min(700px, 100%);
+}
+
+.room-video-shell {
+  min-height: 320px;
+}
+
+.room-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.room-actions a {
+  display: inline-grid;
+  place-items: center;
+  text-align: center;
+  text-decoration: none;
+}
+.room-shell .capture-card {
+  width: min(960px, 100%);
+}
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-height: 0;
+}
+
+.participant-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.participant-card p {
+  margin: 0 0 8px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.participant-video,
+.participant-placeholder {
+  height: 180px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(7, 11, 23, 0.3);
+}
+
+.participant-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.participant-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.room-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.room-controls button {
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.11);
+  transition: transform 220ms ease, background 220ms ease, box-shadow 220ms ease;
+}
+
+.room-controls button.active {
+  color: #151923;
+  background: linear-gradient(135deg, var(--mint), var(--sky));
+  box-shadow: 0 12px 28px rgba(255, 180, 91, 0.18);
+}
+
+.room-controls button:hover {
+  transform: translateY(-2px);
+}
+
+@media (max-width: 760px) {
+  .room-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.form-error {
+  margin: 4px 0 0;
+  color: #ffd2d9;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.room-actions button {
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 14px;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.12);
+}
