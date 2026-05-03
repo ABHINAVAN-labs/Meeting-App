@@ -32,7 +32,7 @@ export default function Home() {
         ))}
       </div>
       <section className="home-card glass-panel" aria-label="Meeting app entry">
-        <h1>MeetiGate</h1>
+        <h1 className="meetigate-font">Meetigate</h1>
         <Link className="primary-action home-continue" href="/landing">
           Continue
         </Link>
