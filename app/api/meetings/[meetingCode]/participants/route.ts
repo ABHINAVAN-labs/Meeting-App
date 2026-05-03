@@ -6,7 +6,7 @@ import { parseSessionCookie } from "../../../../../lib/meetings/session";
 import { normalizeMeetingCode } from "../../../../../lib/meetings/validation";
 
 export async function GET(
-  _: Request,
+  request: Request,
   context: { params: Promise<{ meetingCode: string }> }
 ) {
   const { meetingCode } = await context.params;
@@ -19,10 +19,21 @@ export async function GET(
   const cookieStore = await cookies();
   const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
 
-  if (!session || session.meetingCode !== normalizedCode) {
+  const headerParticipantId = request.headers.get("x-participant-id")?.trim() ?? "";
+  const participantId = headerParticipantId || (session?.meetingCode === normalizedCode ? session.participantId : "");
+
+  if (!participantId) {
     return NextResponse.json({ message: "Join this meeting from lobby first." }, { status: 403 });
   }
 
-  const participants = listRoomParticipants(normalizedCode, session.participantId);
-  return NextResponse.json({ participants, sessionParticipantId: session.participantId });
+  const participants = listRoomParticipants(normalizedCode, participantId);
+  const sessionParticipant = participants.find((participant) => participant.id === participantId) ?? null;
+  const pendingParticipants = participants.filter((participant) => participant.status === "pending");
+
+  return NextResponse.json({
+    participants,
+    pendingParticipants,
+    sessionParticipant,
+    sessionParticipantId: participantId
+  });
 }

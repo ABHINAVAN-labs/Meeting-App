@@ -27,6 +27,9 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   if (!current) {
     return NextResponse.json({ message: "Join this meeting from lobby first." }, { status: 403 });
   }
+  if (current.status !== "active") {
+    return NextResponse.json({ message: "Waiting for teacher approval." }, { status: 403 });
+  }
 
   const livekitUrl = getLiveKitUrl();
   if (!livekitUrl) {

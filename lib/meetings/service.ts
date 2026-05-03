@@ -2,16 +2,18 @@ import { randomUUID } from "crypto";
 import { normalizeMeetingCode, normalizeParticipantName } from "./validation";
 import {
   countRole,
+  getParticipant,
   getParticipants,
   publishEvent,
   removeParticipant,
   touchParticipant,
+  updateParticipantStatus,
   upsertParticipant
 } from "./store";
 import type { JoinMeetingRequest, Participant } from "./types";
 
 export type JoinResult =
-  | { ok: true; meetingCode: string; participant: Participant }
+  | { ok: true; meetingCode: string; participant: Participant; status: Participant["status"] }
   | { ok: false; message: string };
 
 export function joinMeeting(payload: JoinMeetingRequest): JoinResult {
@@ -33,12 +35,13 @@ export function joinMeeting(payload: JoinMeetingRequest): JoinResult {
     id: randomUUID(),
     displayName,
     role: payload.role,
+    status: payload.role === "teacher" ? "active" : "pending",
     joinedAt: now,
     lastSeenAt: now
   };
 
   upsertParticipant(meetingCode, participant);
-  return { ok: true, meetingCode, participant };
+  return { ok: true, meetingCode, participant, status: participant.status };
 }
 
 export function listRoomParticipants(meetingCode: string, participantId?: string): Participant[] {
@@ -60,6 +63,61 @@ export function leaveMeeting(meetingCode: string, participantId: string): void {
     return;
   }
   removeParticipant(normalizedMeetingCode, participantId);
+}
+
+function assertActiveTeacher(meetingCode: string, actorParticipantId: string): boolean {
+  const actor = getParticipant(meetingCode, actorParticipantId);
+  return Boolean(actor && actor.role === "teacher" && actor.status === "active");
+}
+
+export function approveParticipant(
+  meetingCode: string,
+  actorParticipantId: string,
+  targetParticipantId: string
+): { ok: true } | { ok: false; message: string } {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code." };
+  }
+  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+    return { ok: false, message: "Only active teacher can approve requests." };
+  }
+
+  const target = getParticipant(normalizedMeetingCode, targetParticipantId);
+  if (!target) {
+    return { ok: false, message: "Participant not found." };
+  }
+  if (target.status === "rejected") {
+    return { ok: false, message: "Rejected participants cannot be approved." };
+  }
+
+  updateParticipantStatus(normalizedMeetingCode, targetParticipantId, "active");
+  return { ok: true };
+}
+
+export function rejectParticipant(
+  meetingCode: string,
+  actorParticipantId: string,
+  targetParticipantId: string
+): { ok: true } | { ok: false; message: string } {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code." };
+  }
+  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+    return { ok: false, message: "Only active teacher can reject requests." };
+  }
+
+  const target = getParticipant(normalizedMeetingCode, targetParticipantId);
+  if (!target) {
+    return { ok: false, message: "Participant not found." };
+  }
+  if (target.role === "teacher") {
+    return { ok: false, message: "Teacher cannot be rejected from this control." };
+  }
+
+  updateParticipantStatus(normalizedMeetingCode, targetParticipantId, "rejected");
+  return { ok: true };
 }
 
 export function sendSignal(

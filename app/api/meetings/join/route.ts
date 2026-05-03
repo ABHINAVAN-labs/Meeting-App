@@ -28,6 +28,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     meetingCode: result.meetingCode,
-    participant: result.participant
+    participant: result.participant,
+    status: result.status
   });
 }

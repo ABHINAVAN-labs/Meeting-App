@@ -17,13 +17,26 @@ type JoinResponse = {
   participant: {
     id: string;
   };
+  status: "pending" | "active" | "rejected";
+};
+
+type ParticipantsResponse = {
+  sessionParticipant?: {
+    id: string;
+    status: "pending" | "active" | "rejected";
+  } | null;
 };
 
 const PROFILE_STORAGE_KEY = "meeting_app_profile";
 const SESSION_STORAGE_PREFIX = "meeting_participant_session_";
+const PREFS_STORAGE_PREFIX = "meeting_media_prefs_";
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
+}
+
+function prefsKey(meetingCode: string) {
+  return `${PREFS_STORAGE_PREFIX}${meetingCode}`;
 }
 
 export default function MeetingCodePage() {
@@ -40,6 +53,7 @@ export default function MeetingCodePage() {
   const [micEnabled, setMicEnabled] = useState(false);
   const [joinError, setJoinError] = useState("");
   const [isJoining, setIsJoining] = useState(false);
+  const [isWaitingApproval, setIsWaitingApproval] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -71,7 +85,7 @@ export default function MeetingCodePage() {
       return mediaStream;
     } catch {
       setCameraStatus("blocked");
-      setCameraError("Camera permission is required for ready check preview.");
+      setCameraError("Camera/mic access is optional. You can still join without it.");
       return null;
     }
   }
@@ -146,8 +160,26 @@ export default function MeetingCodePage() {
     if (payload.participant?.id) {
       sessionStorage.setItem(sessionKey(meetingCode), payload.participant.id);
     }
+    sessionStorage.setItem(
+      prefsKey(meetingCode),
+      JSON.stringify({
+        cameraEnabled,
+        micEnabled
+      })
+    );
 
-    router.push(meetingRoomHref);
+    if (payload.status === "active") {
+      router.push(meetingRoomHref);
+      return;
+    }
+    if (payload.status === "rejected") {
+      setJoinError("Join request was rejected by the teacher.");
+      setIsJoining(false);
+      return;
+    }
+
+    setIsWaitingApproval(true);
+    setIsJoining(false);
   }
 
   useEffect(() => {
@@ -156,6 +188,77 @@ export default function MeetingCodePage() {
       videoRef.current.play().catch(() => undefined);
     }
   }, [stream]);
+
+  useEffect(() => {
+    if (!meetingCode) {
+      return;
+    }
+
+    const bootstrapJoinState = async () => {
+      const participantId = sessionStorage.getItem(sessionKey(meetingCode)) ?? "";
+      if (!participantId) {
+        return;
+      }
+
+      const response = await fetch(`/api/meetings/${encodeURIComponent(meetingCode)}/participants`, {
+        method: "GET",
+        headers: { "x-participant-id": participantId }
+      }).catch(() => null);
+      if (!response || !response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as ParticipantsResponse;
+      const status = payload.sessionParticipant?.status;
+      if (status === "active") {
+        router.push(meetingRoomHref);
+        return;
+      }
+      if (status === "pending") {
+        setIsWaitingApproval(true);
+        setJoinError("");
+        return;
+      }
+      if (status === "rejected") {
+        setIsWaitingApproval(false);
+        setJoinError("Join request was rejected by the teacher.");
+      }
+    };
+
+    void bootstrapJoinState();
+  }, [meetingCode, meetingRoomHref, router]);
+
+  useEffect(() => {
+    if (!isWaitingApproval || !meetingCode) {
+      return;
+    }
+
+    const interval = window.setInterval(async () => {
+      const participantId = sessionStorage.getItem(sessionKey(meetingCode)) ?? "";
+      const response = await fetch(`/api/meetings/${encodeURIComponent(meetingCode)}/participants`, {
+        method: "GET",
+        headers: participantId ? { "x-participant-id": participantId } : undefined
+      }).catch(() => null);
+      if (!response || !response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as ParticipantsResponse;
+      const status = payload.sessionParticipant?.status;
+      if (status === "active") {
+        router.push(meetingRoomHref);
+        return;
+      }
+      if (status === "rejected") {
+        setIsWaitingApproval(false);
+        setJoinError("Join request was rejected by the teacher.");
+      }
+    }, 2000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isWaitingApproval, meetingCode, meetingRoomHref, router]);
 
   useEffect(() => {
     return () => {
@@ -190,7 +293,7 @@ export default function MeetingCodePage() {
           ) : (
             <div className="video-placeholder">
               <strong>Camera preview</strong>
-              <span>{cameraError || "Turn on camera to complete your ready check."}</span>
+              <span>{cameraError || "Optional: turn on camera/mic before joining."}</span>
             </div>
           )}
         </div>
@@ -205,9 +308,15 @@ export default function MeetingCodePage() {
         </div>
 
         {joinError ? <p className="form-error">{joinError}</p> : null}
+        {isWaitingApproval ? <p>Waiting for teacher approval...</p> : null}
 
-        <button className="primary-action lobby-join" type="button" onClick={askToJoin} disabled={isJoining || !meetingCode}>
-          {isJoining ? "Joining..." : "Ask to Join"}
+        <button
+          className="primary-action lobby-join"
+          type="button"
+          onClick={askToJoin}
+          disabled={isJoining || !meetingCode || isWaitingApproval}
+        >
+          {isJoining ? "Joining..." : isWaitingApproval ? "Request Sent" : "Ask to Join"}
         </button>
       </section>
     </main>
