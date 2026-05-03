@@ -4,14 +4,16 @@ const rooms = new Map<string, Room>();
 const roomSubscribers = new Map<string, Set<(event: MeetingEvent) => void>>();
 
 function normalizeParticipantStatus(participant: Participant): Participant {
-  if (participant.status) {
+  if (participant.status && typeof participant.handRaised === "boolean" && "handRaisedAt" in participant) {
     return participant;
   }
 
   // Compatibility fallback for participants created before status was introduced.
   const normalized: Participant = {
     ...participant,
-    status: "active"
+    status: participant.status ?? "active",
+    handRaised: participant.handRaised ?? false,
+    handRaisedAt: participant.handRaisedAt ?? null
   };
   return normalized;
 }
@@ -113,6 +115,37 @@ export function updateParticipantStatus(
   room.participants.set(participantId, existing);
   publishEvent(meetingCode, { type: "participant-status-updated", participantId, status });
   return existing;
+}
+
+export function updateParticipantHandRaised(
+  meetingCode: string,
+  participantId: string,
+  handRaised: boolean
+): Participant | null {
+  const room = rooms.get(meetingCode);
+  const existing = room?.participants.get(participantId);
+  if (!room || !existing) {
+    return null;
+  }
+
+  const normalized = normalizeParticipantStatus(existing);
+  const handRaisedAt = handRaised ? Date.now() : null;
+
+  const updated: Participant = {
+    ...normalized,
+    handRaised,
+    handRaisedAt,
+    lastSeenAt: Date.now()
+  };
+
+  room.participants.set(participantId, updated);
+  publishEvent(meetingCode, {
+    type: "participant-hand-updated",
+    participantId,
+    handRaised,
+    handRaisedAt
+  });
+  return updated;
 }
 
 export function countRole(meetingCode: string, role: Participant["role"]): number {
