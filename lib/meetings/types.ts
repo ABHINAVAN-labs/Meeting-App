@@ -6,6 +6,8 @@ export type Participant = {
   displayName: string;
   role: ParticipantRole;
   status: ParticipantStatus;
+  handRaised: boolean;
+  handRaisedAt: number | null;
   joinedAt: number;
   lastSeenAt: number;
 };
@@ -20,6 +22,7 @@ export type MeetingEvent =
   | { type: "participant-joined"; participant: Participant }
   | { type: "participant-left"; participantId: string }
   | { type: "participant-status-updated"; participantId: string; status: ParticipantStatus }
+  | { type: "participant-hand-updated"; participantId: string; handRaised: boolean; handRaisedAt: number | null }
   | {
       type: "signal";
       fromParticipantId: string;

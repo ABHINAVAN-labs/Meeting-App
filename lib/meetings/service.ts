@@ -7,6 +7,7 @@ import {
   publishEvent,
   removeParticipant,
   touchParticipant,
+  updateParticipantHandRaised,
   updateParticipantStatus,
   upsertParticipant
 } from "./store";
@@ -36,6 +37,8 @@ export function joinMeeting(payload: JoinMeetingRequest): JoinResult {
     displayName,
     role: payload.role,
     status: payload.role === "teacher" ? "active" : "pending",
+    handRaised: false,
+    handRaisedAt: null,
     joinedAt: now,
     lastSeenAt: now
   };
@@ -117,6 +120,32 @@ export function rejectParticipant(
   }
 
   updateParticipantStatus(normalizedMeetingCode, targetParticipantId, "rejected");
+  return { ok: true };
+}
+
+export function setParticipantHandRaised(
+  meetingCode: string,
+  actorParticipantId: string,
+  handRaised: boolean
+): { ok: true } | { ok: false; message: string } {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code." };
+  }
+
+  const participant = getParticipant(normalizedMeetingCode, actorParticipantId);
+  if (!participant) {
+    return { ok: false, message: "Participant not found." };
+  }
+  if (participant.status !== "active") {
+    return { ok: false, message: "Only active participants can use raise hand." };
+  }
+
+  const updated = updateParticipantHandRaised(normalizedMeetingCode, actorParticipantId, handRaised);
+  if (!updated) {
+    return { ok: false, message: "Could not update raise hand state." };
+  }
+
   return { ok: true };
 }
 
