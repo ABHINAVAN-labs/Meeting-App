@@ -1,41 +1,39 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
-
-const BORDER_SEGMENTS = Array.from({ length: 88 }, (_, index) => index);
-const BORDER_ANGLE_PAIRS = [
-  [-8, 5],
-  [-3, 9],
-  [6, -7],
-  [-10, 2],
-  [4, -5],
-  [-6, 8],
-  [9, -2],
-  [-4, 6]
-];
+import Image from "next/image";
 
 export default function Home() {
   return (
     <main className="home-shell">
-      <div className="animated-line-border" aria-hidden="true">
-        {BORDER_SEGMENTS.map((segment) => (
-          <span
-            key={segment}
-            style={
-              {
-                "--segment-index": segment,
-                "--segment-position": segment % 22,
-                "--angle-a": `${BORDER_ANGLE_PAIRS[segment % BORDER_ANGLE_PAIRS.length][0]}deg`,
-                "--angle-b": `${BORDER_ANGLE_PAIRS[segment % BORDER_ANGLE_PAIRS.length][1]}deg`
-              } as CSSProperties
-            }
-          />
-        ))}
+      <div className="home-bg-wrap" aria-hidden="true">
+        <Image
+          src="/landing-background.png"
+          alt=""
+          fill
+          priority
+          className="home-bg-image"
+          sizes="100vw"
+        />
+        <Image
+          src="/landing-background.png"
+          alt=""
+          fill
+          priority
+          className="home-bg-art"
+          sizes="100vw"
+        />
+        <div className="home-bg-overlay" />
       </div>
       <section className="home-card" aria-label="Meeting app entry">
-        <p className="home-brand-title meetigate-font">Meetigate</p>
-        <Link className="primary-action home-continue" href="/landing">
-          Continue
-        </Link>
+        <p className="home-kicker">Classrooms, opened with one link</p>
+        <h1 className="home-brand-title meetigate-font">Meetigate</h1>
+        <p className="home-copy">
+          A simple meeting space for teachers and students to join, host, and keep class moving.
+        </p>
+        <div className="home-actions">
+          <Link className="primary-action home-continue" href="/landing">
+            Enter Meetigate
+          </Link>
+        </div>
       </section>
     </main>
   );
