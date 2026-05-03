@@ -71,7 +71,7 @@ export default function LandingPage() {
         <div className="access-panel">
           <a className="brand" href="/">
             <span className="brand-mark">M</span>
-            <span>Meetigate</span>
+            <span className="meetigate-font">Meetigate</span>
           </a>
 
           <div className="join-copy">

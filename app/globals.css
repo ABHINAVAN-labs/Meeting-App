@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Samarkan";
+  src: url("/fonts/samarkan.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --ink: #f8fbff;
   --muted: rgba(248, 251, 255, 0.72);
@@ -230,6 +238,13 @@ button {
   width: fit-content;
   margin-bottom: clamp(26px, 5vh, 48px);
   font-weight: 800;
+}
+
+.meetigate-font {
+  font-family: "Samarkan", "Noto Serif Devanagari", "Times New Roman", serif;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: 0.02em;
 }
 
 .brand-mark {
