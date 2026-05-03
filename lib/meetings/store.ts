@@ -3,6 +3,19 @@ import type { MeetingEvent, Participant, Room } from "./types";
 const rooms = new Map<string, Room>();
 const roomSubscribers = new Map<string, Set<(event: MeetingEvent) => void>>();
 
+function normalizeParticipantStatus(participant: Participant): Participant {
+  if (participant.status) {
+    return participant;
+  }
+
+  // Compatibility fallback for participants created before status was introduced.
+  const normalized: Participant = {
+    ...participant,
+    status: "active"
+  };
+  return normalized;
+}
+
 function getOrCreateRoom(meetingCode: string): Room {
   const existing = rooms.get(meetingCode);
   if (existing) {
@@ -31,8 +44,25 @@ export function touchParticipant(meetingCode: string, participantId: string): vo
     return;
   }
 
+  const normalized = normalizeParticipantStatus(existing);
   existing.lastSeenAt = Date.now();
-  room?.participants.set(participantId, existing);
+  room?.participants.set(participantId, { ...normalized, lastSeenAt: Date.now() });
+}
+
+export function getParticipant(meetingCode: string, participantId: string): Participant | null {
+  const room = rooms.get(meetingCode);
+  if (!room) {
+    return null;
+  }
+
+  const participant = room.participants.get(participantId);
+  if (!participant) {
+    return null;
+  }
+
+  const normalized = normalizeParticipantStatus(participant);
+  room.participants.set(participantId, normalized);
+  return normalized;
 }
 
 export function getParticipants(meetingCode: string): Participant[] {
@@ -41,7 +71,13 @@ export function getParticipants(meetingCode: string): Participant[] {
     return [];
   }
 
-  return [...room.participants.values()].sort((a, b) => a.joinedAt - b.joinedAt);
+  return [...room.participants.entries()]
+    .map(([id, participant]) => {
+      const normalized = normalizeParticipantStatus(participant);
+      room.participants.set(id, normalized);
+      return normalized;
+    })
+    .sort((a, b) => a.joinedAt - b.joinedAt);
 }
 
 export function removeParticipant(meetingCode: string, participantId: string): void {
@@ -59,6 +95,24 @@ export function removeParticipant(meetingCode: string, participantId: string): v
     rooms.delete(meetingCode);
     roomSubscribers.delete(meetingCode);
   }
+}
+
+export function updateParticipantStatus(
+  meetingCode: string,
+  participantId: string,
+  status: Participant["status"]
+): Participant | null {
+  const room = rooms.get(meetingCode);
+  const existing = room?.participants.get(participantId);
+  if (!room || !existing) {
+    return null;
+  }
+
+  existing.status = status;
+  existing.lastSeenAt = Date.now();
+  room.participants.set(participantId, existing);
+  publishEvent(meetingCode, { type: "participant-status-updated", participantId, status });
+  return existing;
 }
 
 export function countRole(meetingCode: string, role: Participant["role"]): number {

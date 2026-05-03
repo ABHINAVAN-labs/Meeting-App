@@ -28,10 +28,24 @@ type RemoteTile = {
   audioPublication?: RemoteTrackPublication;
 };
 
+type ParticipantRole = "student" | "teacher";
+type ParticipantStatus = "pending" | "active" | "rejected";
+type PendingParticipant = {
+  id: string;
+  displayName: string;
+  role: ParticipantRole;
+  status: ParticipantStatus;
+};
+
 const SESSION_STORAGE_PREFIX = "meeting_participant_session_";
+const PREFS_STORAGE_PREFIX = "meeting_media_prefs_";
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
+}
+
+function prefsKey(meetingCode: string) {
+  return `${PREFS_STORAGE_PREFIX}${meetingCode}`;
 }
 
 function RemoteVideo({ publication }: { publication?: RemoteTrackPublication }) {
@@ -114,11 +128,13 @@ export default function MeetingRoomPage() {
   const lobbyHref = `/${encodeURIComponent(readableMeetingCode)}`;
 
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>("idle");
-  const [cameraEnabled, setCameraEnabled] = useState(true);
-  const [micEnabled, setMicEnabled] = useState(true);
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [micEnabled, setMicEnabled] = useState(false);
   const [accessError, setAccessError] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
   const [remoteParticipants, setRemoteParticipants] = useState<RemoteTile[]>([]);
+  const [pendingParticipants, setPendingParticipants] = useState<PendingParticipant[]>([]);
+  const [selfRole, setSelfRole] = useState<ParticipantRole>("student");
 
   const participantIdRef = useRef("");
   const isLeavingRef = useRef(false);
@@ -220,6 +236,20 @@ export default function MeetingRoomPage() {
 
     setCameraStatus("requesting");
 
+    let desiredCamera = false;
+    let desiredMic = false;
+    try {
+      const rawPrefs = sessionStorage.getItem(prefsKey(readableMeetingCode));
+      if (rawPrefs) {
+        const parsed = JSON.parse(rawPrefs) as { cameraEnabled?: boolean; micEnabled?: boolean };
+        desiredCamera = Boolean(parsed.cameraEnabled);
+        desiredMic = Boolean(parsed.micEnabled);
+      }
+    } catch {
+      desiredCamera = false;
+      desiredMic = false;
+    }
+
     if (!participantIdRef.current) {
       participantIdRef.current = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
     }
@@ -291,11 +321,14 @@ export default function MeetingRoomPage() {
       let micOn = false;
 
       try {
-        if (!hasActiveLocalTrack(room, Track.Kind.Video)) {
+        if (desiredCamera && !hasActiveLocalTrack(room, Track.Kind.Video)) {
           await room.localParticipant.setCameraEnabled(true);
         }
+        if (!desiredCamera && hasActiveLocalTrack(room, Track.Kind.Video)) {
+          await room.localParticipant.setCameraEnabled(false);
+        }
         await attachLocalVideo(room);
-        cameraOn = true;
+        cameraOn = desiredCamera;
       } catch (error) {
         const details = formatUnknownError(error);
         if (!details.message.includes("Cancelled publication by calling unpublish")) {
@@ -304,10 +337,13 @@ export default function MeetingRoomPage() {
       }
 
       try {
-        if (!hasActiveLocalTrack(room, Track.Kind.Audio)) {
+        if (desiredMic && !hasActiveLocalTrack(room, Track.Kind.Audio)) {
           await room.localParticipant.setMicrophoneEnabled(true);
         }
-        micOn = true;
+        if (!desiredMic && hasActiveLocalTrack(room, Track.Kind.Audio)) {
+          await room.localParticipant.setMicrophoneEnabled(false);
+        }
+        micOn = desiredMic;
       } catch (error) {
         const details = formatUnknownError(error);
         if (!details.message.includes("Cancelled publication by calling unpublish")) {
@@ -409,6 +445,62 @@ export default function MeetingRoomPage() {
     };
   }, [readableMeetingCode]);
 
+  useEffect(() => {
+    if (!readableMeetingCode) {
+      return;
+    }
+
+    const poll = window.setInterval(async () => {
+      const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+      const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/participants`, {
+        headers: actorParticipantId ? { "x-participant-id": actorParticipantId } : undefined
+      }).catch(() => null);
+      if (!response || !response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        sessionParticipant?: {
+          role?: ParticipantRole;
+        } | null;
+        pendingParticipants?: PendingParticipant[];
+      };
+      const serverRole = payload.sessionParticipant?.role;
+      if (serverRole === "teacher" || serverRole === "student") {
+        setSelfRole(serverRole);
+      }
+      if (serverRole === "teacher") {
+        setPendingParticipants(payload.pendingParticipants ?? []);
+      } else {
+        setPendingParticipants([]);
+      }
+    }, 2000);
+
+    return () => {
+      window.clearInterval(poll);
+    };
+  }, [readableMeetingCode]);
+
+  async function resolvePending(participantId: string, action: "admit" | "reject") {
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/${action}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(actorParticipantId ? { "x-participant-id": actorParticipantId } : {})
+      },
+      body: JSON.stringify({ participantId })
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      setAccessError(payload.message ?? `Could not ${action} participant.`);
+      return;
+    }
+
+    setPendingParticipants((prev) => prev.filter((participant) => participant.id !== participantId));
+  }
+
   return (
     <main className="entry-shell room-shell">
       <section className="capture-card glass-panel" aria-label="Meeting room">
@@ -486,6 +578,27 @@ export default function MeetingRoomPage() {
             Leave Room
           </button>
         </div>
+
+        {selfRole === "teacher" ? (
+          <section aria-label="Pending join requests">
+            <h3>Pending requests ({pendingParticipants.length})</h3>
+            {pendingParticipants.length === 0 ? (
+              <p>No students waiting.</p>
+            ) : (
+              pendingParticipants.map((participant) => (
+                <div key={participant.id} className="room-controls">
+                  <span>{participant.displayName}</span>
+                  <button type="button" onClick={() => resolvePending(participant.id, "admit")}>
+                    Approve
+                  </button>
+                  <button type="button" onClick={() => resolvePending(participant.id, "reject")}>
+                    Reject
+                  </button>
+                </div>
+              ))
+            )}
+          </section>
+        ) : null}
       </section>
     </main>
   );
