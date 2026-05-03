@@ -1,18 +1,22 @@
-# Meeting App
+# Meetigate
 
-A Next.js meeting app with a staged join flow and LiveKit-powered real-time audio/video rooms.
+Meetigate is a Next.js classroom meeting app with a staged join flow and LiveKit-powered real-time audio/video rooms.
 
 ## Current Status
 
 Implemented:
 - Multi-page meeting flow:
-  - `/` intro page
+  - `/` branded Meetigate home page
   - `/landing` meeting access page
   - `/:meetingCode` lobby / ready-check
   - `/:meetingCode/room` live meeting room
 - Role model:
   - one active `teacher` per meeting
   - multiple `student` participants
+- Branded access UX:
+  - Meetigate-themed home and landing experience
+  - role-based join form (student/teacher)
+  - teacher-only meeting link generation from landing page
 - Real-time media:
   - LiveKit token-based room connect
   - local camera/mic publish
@@ -35,9 +39,10 @@ Implemented:
 
 1. User opens `/` and clicks **Continue**.
 2. On `/landing`, user selects role, enters name + meeting code/link.
-3. User reaches `/:meetingCode` lobby, can test camera/mic and click **Ask to Join**.
-4. On join success, user enters `/:meetingCode/room`.
-5. Room connects to LiveKit and renders participant media.
+3. Teacher can create a new meeting link directly from landing.
+4. User reaches `/:meetingCode` lobby, can test camera/mic and click **Ask to Join**.
+5. On join success, user enters `/:meetingCode/room`.
+6. Room connects to LiveKit and renders participant media.
 
 ## Project Structure
 
