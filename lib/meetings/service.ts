@@ -123,6 +123,31 @@ export function rejectParticipant(
   return { ok: true };
 }
 
+export function removeParticipantFromRoom(
+  meetingCode: string,
+  actorParticipantId: string,
+  targetParticipantId: string
+): { ok: true } | { ok: false; message: string } {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code." };
+  }
+  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+    return { ok: false, message: "Only active teacher can remove participants." };
+  }
+
+  const target = getParticipant(normalizedMeetingCode, targetParticipantId);
+  if (!target) {
+    return { ok: false, message: "Participant not found." };
+  }
+  if (target.role === "teacher") {
+    return { ok: false, message: "Teacher cannot be removed from this control." };
+  }
+
+  removeParticipant(normalizedMeetingCode, targetParticipantId);
+  return { ok: true };
+}
+
 export function setParticipantHandRaised(
   meetingCode: string,
   actorParticipantId: string,

@@ -143,6 +143,7 @@ export default function MeetingRoomPage() {
   const [remoteParticipants, setRemoteParticipants] = useState<RemoteTile[]>([]);
   const [pendingParticipants, setPendingParticipants] = useState<PendingParticipant[]>([]);
   const [raisedHands, setRaisedHands] = useState<ActiveParticipant[]>([]);
+  const [activeStudents, setActiveStudents] = useState<ActiveParticipant[]>([]);
   const [selfRole, setSelfRole] = useState<ParticipantRole>("student");
   const [isHandRaised, setIsHandRaised] = useState(false);
 
@@ -150,6 +151,7 @@ export default function MeetingRoomPage() {
   const isLeavingRef = useRef(false);
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const hasBeenRemovedRef = useRef(false);
 
   useEffect(() => {
     setLogLevel("warn");
@@ -477,6 +479,17 @@ export default function MeetingRoomPage() {
         participants?: ActiveParticipant[];
         pendingParticipants?: PendingParticipant[];
       };
+
+      if (!payload.sessionParticipant) {
+        if (!hasBeenRemovedRef.current) {
+          hasBeenRemovedRef.current = true;
+          setAccessError("You were removed from this room by the teacher.");
+          await leaveMeeting();
+          router.push("/landing");
+        }
+        return;
+      }
+
       const serverRole = payload.sessionParticipant?.role;
       if (serverRole === "teacher" || serverRole === "student") {
         setSelfRole(serverRole);
@@ -487,6 +500,11 @@ export default function MeetingRoomPage() {
         .filter((participant) => participant.role === "student" && participant.status === "active" && participant.handRaised)
         .sort((a, b) => (a.handRaisedAt ?? Number.MAX_SAFE_INTEGER) - (b.handRaisedAt ?? Number.MAX_SAFE_INTEGER));
       setRaisedHands(queue);
+
+      const students = (payload.participants ?? []).filter(
+        (participant) => participant.role === "student" && participant.status === "active"
+      );
+      setActiveStudents(students);
 
       if (serverRole === "teacher") {
         setPendingParticipants(payload.pendingParticipants ?? []);
@@ -539,6 +557,27 @@ export default function MeetingRoomPage() {
     }
 
     setIsHandRaised(next);
+  }
+
+  async function removeFromRoom(participantId: string) {
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/remove`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(actorParticipantId ? { "x-participant-id": actorParticipantId } : {})
+      },
+      body: JSON.stringify({ participantId })
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      setAccessError(payload.message ?? "Could not remove participant.");
+      return;
+    }
+
+    setActiveStudents((prev) => prev.filter((participant) => participant.id !== participantId));
+    setRaisedHands((prev) => prev.filter((participant) => participant.id !== participantId));
   }
 
   return (
@@ -652,6 +691,24 @@ export default function MeetingRoomPage() {
               <p>No hands raised.</p>
             ) : (
               raisedHands.map((participant) => <p key={participant.id}>{participant.displayName}</p>)
+            )}
+          </section>
+        ) : null}
+
+        {selfRole === "teacher" ? (
+          <section aria-label="Active students">
+            <h3>Students in room ({activeStudents.length})</h3>
+            {activeStudents.length === 0 ? (
+              <p>No active students yet.</p>
+            ) : (
+              activeStudents.map((participant) => (
+                <div key={participant.id} className="room-controls">
+                  <span>{participant.displayName}</span>
+                  <button type="button" onClick={() => removeFromRoom(participant.id)}>
+                    Remove from room
+                  </button>
+                </div>
+              ))
             )}
           </section>
         ) : null}
