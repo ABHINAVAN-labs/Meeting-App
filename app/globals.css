@@ -1053,8 +1053,27 @@ h1 {
 }
 
 .home-card h1 {
+  display: inline;
   color: #800000;
   margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.home-brand-title {
+  display: inline;
+  color: #800000;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: clamp(46px, 7vw, 64px);
+  line-height: 1;
 }
 
 .home-continue {
