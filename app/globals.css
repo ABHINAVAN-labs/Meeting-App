@@ -136,6 +136,22 @@ button {
   animation: ambientDriftThree 32s ease-in-out infinite alternate;
 }
 
+body:has(.home-shell) .animated-background {
+  background: #f6d13d url("/landing-background.png") center / cover no-repeat;
+}
+
+body:has(.home-shell) .image-theme-layer,
+body:has(.home-shell) .background-depth,
+body:has(.home-shell) .ambient-color {
+  display: none;
+}
+
+@media (max-width: 760px), (max-aspect-ratio: 4 / 5) {
+  body:has(.home-shell) .animated-background {
+    background-position: left center;
+  }
+}
+
 .entry-shell {
   position: relative;
   z-index: 1;
@@ -923,7 +939,106 @@ h1 {
   padding: 24px;
 }
 
+.animated-line-border {
+  position: fixed;
+  inset: 18px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.animated-line-border span {
+  --segment-index: 0;
+  --segment-position: 0;
+  --edge-translate: none;
+  --side-angle: 0deg;
+  --angle-a: 0deg;
+  --angle-b: 12deg;
+  position: absolute;
+  width: 20px;
+  height: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(79, 55, 20, 0.44);
+  background: linear-gradient(180deg, #ffffff 0%, #fff7dc 100%);
+  box-shadow:
+    0 1px 0 rgba(79, 55, 20, 0.34),
+    0 0 10px rgba(255, 255, 255, 0.34);
+  opacity: 0.92;
+  animation: borderSegmentFlip 0.92s steps(1, end) infinite;
+  animation-delay: calc(var(--segment-index) * -34ms);
+  transform-origin: center;
+  transform: var(--edge-translate) rotate(calc(var(--side-angle) + var(--angle-a)));
+}
+
+.animated-line-border span:nth-child(n + 1):nth-child(-n + 22) {
+  top: 0;
+  left: calc(var(--segment-position) * 100% / 21);
+  --edge-translate: translateX(-50%);
+}
+
+.animated-line-border span:nth-child(n + 23):nth-child(-n + 44) {
+  top: calc(var(--segment-position) * 100% / 21);
+  right: 0;
+  --edge-translate: translateY(-50%);
+  --side-angle: 90deg;
+}
+
+.animated-line-border span:nth-child(n + 45):nth-child(-n + 66) {
+  bottom: 0;
+  right: calc(var(--segment-position) * 100% / 21);
+  --edge-translate: translateX(50%);
+}
+
+.animated-line-border span:nth-child(n + 67):nth-child(-n + 88) {
+  bottom: calc(var(--segment-position) * 100% / 21);
+  left: 0;
+  --edge-translate: translateY(50%);
+  --side-angle: 90deg;
+}
+
+.animated-line-border span:nth-child(1),
+.animated-line-border span:nth-child(45),
+.animated-line-border span:nth-child(66),
+.animated-line-border span:nth-child(22) {
+  --edge-translate: translate(-50%, -50%);
+  --side-angle: 45deg;
+}
+
+.animated-line-border span:nth-child(22) {
+  --edge-translate: translate(50%, -50%);
+  --side-angle: -45deg;
+}
+
+.animated-line-border span:nth-child(45) {
+  --edge-translate: translate(50%, 50%);
+}
+
+.animated-line-border span:nth-child(66) {
+  --edge-translate: translate(-50%, 50%);
+  --side-angle: -45deg;
+}
+
+.animated-line-border span:nth-child(23),
+.animated-line-border span:nth-child(44),
+.animated-line-border span:nth-child(67),
+.animated-line-border span:nth-child(88) {
+  display: none;
+}
+
+@keyframes borderSegmentFlip {
+  0%,
+  49% {
+    transform: var(--edge-translate) rotate(calc(var(--side-angle) + var(--angle-a)));
+  }
+
+  50%,
+  100% {
+    transform: var(--edge-translate) rotate(calc(var(--side-angle) + var(--angle-b)));
+  }
+}
+
 .home-card {
+  position: relative;
+  z-index: 2;
   display: grid;
   gap: 20px;
   justify-items: center;
@@ -933,6 +1048,7 @@ h1 {
 }
 
 .home-card h1 {
+  color: #800000;
   margin: 0;
 }
 
