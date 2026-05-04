@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 440">
+  <defs>
+    <linearGradient id="dressA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffbe76"/>
+      <stop offset="100%" stop-color="#f07a4f"/>
+    </linearGradient>
+    <linearGradient id="skinA" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4c39d"/>
+      <stop offset="100%" stop-color="#d99a72"/>
+    </linearGradient>
+  </defs>
+  <g opacity="0.96">
+    <ellipse cx="170" cy="390" rx="88" ry="22" fill="#241528" opacity="0.28"/>
+    <circle cx="172" cy="108" r="44" fill="url(#skinA)"/>
+    <path d="M126 105C126 66 150 40 185 40C209 40 230 52 244 74C229 57 204 50 186 57C170 63 155 78 152 98C149 117 158 133 172 142C146 139 126 126 126 105Z" fill="#2b1b33"/>
+    <path d="M112 190C122 154 145 138 174 138C203 138 226 154 238 190L258 280H94L112 190Z" fill="url(#dressA)"/>
+    <path d="M152 176H194V278H152Z" fill="#f7e2c8" opacity="0.22"/>
+    <path d="M114 196L76 234L96 252L132 214Z" fill="#f4c39d"/>
+    <path d="M240 196L278 234L258 252L222 214Z" fill="#f4c39d"/>
+    <path d="M94 280H258L284 372H72Z" fill="#d14f59"/>
+    <path d="M72 372H284L250 408H104Z" fill="#8a2f45"/>
+    <circle cx="90" cy="244" r="8" fill="#ffde94"/>
+    <circle cx="264" cy="244" r="8" fill="#ffde94"/>
+  </g>
+</svg>
