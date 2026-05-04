@@ -965,6 +965,29 @@ h1 {
   pointer-events: none;
 }
 
+.home-shell::before,
+.home-shell::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: clamp(38px, 4vw, 72px);
+  content: "";
+  pointer-events: none;
+  background-image: url("/Border_cropped_set.png");
+  background-repeat: repeat-y;
+  background-position: top center;
+  background-size: 100% 50%;
+}
+
+.home-shell::before {
+  left: 0;
+}
+
+.home-shell::after {
+  right: 0;
+}
+
 .home-card {
   position: relative;
   z-index: 2;
@@ -1001,9 +1024,10 @@ h1 {
 .home-brand-title {
   color: #800000;
   margin: 0;
-  font-size: 82px;
+  font-size: 92px;
   line-height: 0.9;
   text-wrap: balance;
+  transform: translateX(-10px);
   text-shadow: 0 10px 24px rgba(85, 30, 0, 0.14);
 }
 
@@ -1029,6 +1053,8 @@ h1 {
   width: min(260px, 100%);
   place-items: center;
   min-height: 52px;
+  min-width: 220px;
+  padding: 0 28px;
   text-align: center;
   text-decoration: none;
   border-color: rgba(128, 0, 0, 0.12);
@@ -1060,7 +1086,7 @@ h1 {
   }
 
   .home-brand-title {
-    font-size: 58px;
+    font-size: 64px;
   }
 
   .home-copy {
@@ -1121,7 +1147,7 @@ h1 {
   }
 
   .home-brand-title {
-    font-size: 52px;
+    font-size: 58px;
   }
 
   .home-copy {
@@ -1140,7 +1166,7 @@ h1 {
 
 @media (max-width: 380px) {
   .home-brand-title {
-    font-size: 50px;
+    font-size: 54px;
   }
 }
 
