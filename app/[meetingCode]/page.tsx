@@ -56,6 +56,7 @@ export default function MeetingCodePage() {
   const [isWaitingApproval, setIsWaitingApproval] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hasAutoJoinedTeacher = useRef(false);
 
   async function requestPreviewStream(nextCamera = true, nextMic = true) {
     setCameraStatus("requesting");
@@ -181,6 +182,25 @@ export default function MeetingCodePage() {
     setIsWaitingApproval(true);
     setIsJoining(false);
   }
+
+  useEffect(() => {
+    if (!meetingCode || hasAutoJoinedTeacher.current) {
+      return;
+    }
+
+    const profileRaw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!profileRaw) {
+      return;
+    }
+
+    const profile = JSON.parse(profileRaw) as Partial<Profile>;
+    if (profile.role !== "teacher") {
+      return;
+    }
+
+    hasAutoJoinedTeacher.current = true;
+    void askToJoin();
+  }, [meetingCode]);
 
   useEffect(() => {
     if (videoRef.current && stream) {

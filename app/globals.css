@@ -314,10 +314,10 @@ h1 {
 }
 
 .role-switch button.active {
-  color: #151923;
+  color: #fff4e9;
   font-weight: 800;
-  background: linear-gradient(135deg, var(--mint), var(--sky));
-  box-shadow: 0 12px 28px rgba(255, 180, 91, 0.2);
+  background: #914d11;
+  box-shadow: 0 10px 24px rgba(163, 69, 7, 0.35);
 }
 
 .meeting-form {
@@ -339,6 +339,7 @@ h1 {
   border-radius: 14px;
   outline: none;
   color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
   background: rgba(255, 255, 255, 0.11);
   transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;
 }
@@ -351,6 +352,20 @@ h1 {
   border-color: rgba(255, 180, 91, 0.72);
   background: rgba(255, 255, 255, 0.15);
   box-shadow: 0 0 0 4px rgba(255, 180, 91, 0.14);
+}
+
+.meeting-form input:not(:placeholder-shown) {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.meeting-form input:-webkit-autofill,
+.meeting-form input:-webkit-autofill:hover,
+.meeting-form input:-webkit-autofill:focus,
+.meeting-form input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.11) inset;
+  box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.11) inset;
+  transition: background-color 9999s ease-out 0s;
 }
 
 .form-actions {
@@ -922,38 +937,34 @@ h1 {
 }
 
 .home-shell {
+  --home-frame-size: clamp(38px, 4vw, 72px);
   position: relative;
   z-index: 1;
   display: grid;
   place-items: center;
   min-height: 100dvh;
-  padding: clamp(24px, 7vw, 88px);
+  padding: max(clamp(24px, 7vw, 88px), var(--home-frame-size));
   overflow: hidden;
   isolation: isolate;
 }
 
 .home-bg-wrap {
   position: absolute;
-  inset: 0;
+  inset: var(--home-frame-size);
   z-index: 0;
   background:
-    radial-gradient(circle at 22% 28%, rgba(255, 255, 255, 0.74), transparent 24rem),
+    radial-gradient(circle at 22% 28%, rgba(255, 255, 255, 0.42), transparent 24rem),
     linear-gradient(135deg, #ffe372 0%, #f6c94c 46%, #f7a54f 100%);
 }
 
-.home-bg-image {
-  object-fit: cover;
-  object-position: center;
-  opacity: 0.28;
-  filter: blur(18px) saturate(1.14) contrast(0.96);
-  transform: scale(1.05);
-}
-
 .home-bg-art {
-  object-fit: contain;
-  object-position: center;
-  opacity: 0.78;
-  padding: 18px;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  object-position: center 52%;
+  opacity: 0.92;
+  padding: 0;
 }
 
 .home-bg-overlay {
@@ -971,7 +982,7 @@ h1 {
   top: 0;
   bottom: 0;
   z-index: 1;
-  width: clamp(38px, 4vw, 72px);
+  width: var(--home-frame-size);
   content: "";
   pointer-events: none;
   background-image: url("/Border_cropped_set.png");
@@ -986,6 +997,28 @@ h1 {
 
 .home-shell::after {
   right: 0;
+}
+
+.home-strip {
+  position: absolute;
+  left: var(--home-frame-size);
+  right: var(--home-frame-size);
+  z-index: 2;
+  height: var(--home-frame-size);
+  pointer-events: none;
+  background-repeat: repeat-x;
+  background-position: left center;
+  background-size: auto 100%;
+}
+
+.home-strip-top {
+  top: 0;
+  background-image: url("/horizontal-strip-2.png");
+}
+
+.home-strip-bottom {
+  bottom: 0;
+  background-image: url("/horizontal_strip.png");
 }
 
 .home-card {
@@ -1059,8 +1092,9 @@ h1 {
   text-decoration: none;
   border-color: rgba(128, 0, 0, 0.12);
   border-radius: 16px;
-  background: linear-gradient(135deg, #ff6f7d, #ffd08a);
-  box-shadow: 0 18px 36px rgba(152, 60, 0, 0.22);
+  color: #f6e9d3;
+  background: #3f0e04;
+  box-shadow: 0 18px 36px rgba(35, 8, 3, 0.32);
 }
 
 @media (max-width: 760px) {
@@ -1068,13 +1102,8 @@ h1 {
     padding: 28px 20px;
   }
 
-  .home-bg-image {
-    opacity: 0.34;
-  }
-
   .home-bg-art {
-    padding: 10px;
-    opacity: 0.62;
+    opacity: 0.9;
   }
 
   .home-card {
@@ -1106,20 +1135,14 @@ h1 {
     padding: 28px 18px 36px;
   }
 
-  .home-bg-image {
-    opacity: 0.32;
-    filter: blur(14px) saturate(1.12) contrast(0.94);
-    transform: scale(1.1);
-  }
-
   .home-bg-art {
-    inset: 18px 10px auto;
-    width: calc(100% - 20px) !important;
-    height: min(38vh, 310px) !important;
-    object-fit: contain;
-    object-position: center;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+    object-position: center 54%;
     padding: 0;
-    opacity: 0.88;
+    opacity: 0.9;
   }
 
   .home-bg-overlay {
@@ -1176,14 +1199,98 @@ h1 {
   justify-items: center;
 }
 
+.landing-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.landing-art-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(16, 14, 32, 0.36), rgba(32, 16, 34, 0.42)),
+    url("/new-meeting-access-background.png");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+}
+
 .landing-shell .join-card,
 .ready-shell .preview-card {
   width: min(520px, 100%);
-  height: calc(100vh - 48px);
+  height: min(500px, calc(100vh - 150px));
 }
 
 .landing-shell .join-card {
-  max-height: 760px;
+  justify-content: center;
+  padding: clamp(6px, 0.9vw, 9px) clamp(10px, 1.5vw, 12px);
+}
+
+.landing-shell .access-panel {
+  justify-content: center;
+}
+
+.landing-shell .brand {
+  align-self: center;
+  justify-content: center;
+  margin-bottom: 36px;
+}
+
+.landing-brand-wordmark {
+  display: block;
+  color: #fff2d9;
+  font-size: clamp(44px, 8.2vw, 66px);
+  line-height: 1.02;
+  letter-spacing: 0.01em;
+  text-shadow: 0 8px 18px rgba(20, 8, 32, 0.3);
+}
+
+.landing-shell .join-copy {
+  margin-bottom: 14px;
+}
+
+.landing-shell .eyebrow {
+  margin-bottom: 6px;
+}
+
+.landing-shell h1#join-title {
+  font-size: clamp(54px, 5.8vw, 64px);
+  line-height: 0.92;
+}
+
+.landing-shell .role-switch {
+  margin-bottom: 10px;
+}
+
+.landing-shell .meeting-form {
+  gap: 6px;
+}
+
+.landing-shell .form-actions {
+  margin-top: 4px;
+  gap: 7px;
+}
+
+.landing-shell .primary-action,
+.landing-shell .ghost-action {
+  min-height: 36px;
+  width: min(260px, 64%);
+  justify-self: center;
+  font-size: 17px;
+}
+
+.landing-shell .primary-action {
+  background: #202808;
+  color: #f7f2dd;
+  box-shadow: 0 10px 22px rgba(26, 22, 12, 0.28);
+}
+
+.landing-shell .ghost-action {
+  background: #283618;
+  color: #f7f2dd;
 }
 
 .ready-shell .preview-card {
@@ -1307,6 +1414,10 @@ h1 {
   .room-grid {
     grid-template-columns: 1fr;
   }
+
+  .landing-art-layer {
+    background-position: center;
+  }
 }
 .form-error {
   margin: 4px 0 0;
@@ -1324,3 +1435,14 @@ h1 {
   font-weight: 800;
   background: rgba(255, 255, 255, 0.12);
 }
+
+.landing-shell .form-actions.form-actions-teacher {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.landing-shell .form-actions.form-actions-teacher .primary-action,
+.landing-shell .form-actions.form-actions-teacher .ghost-action {
+  width: 100%;
+  justify-self: stretch;
+}
+

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600">
+  <defs>
+    <style>
+      .line { fill: none; stroke: #f5e7c1; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; opacity: 0.8; }
+      .fill { fill: #f5e7c1; opacity: 0.78; }
+    </style>
+  </defs>
+  <rect width="600" height="600" fill="none"/>
+  <circle class="fill" cx="300" cy="300" r="36"/>
+  <circle class="line" cx="300" cy="300" r="116"/>
+  <circle class="line" cx="300" cy="300" r="186"/>
+  <path class="line" d="M78 518L300 130L522 518Z"/>
+  <path class="line" d="M128 520L300 222L472 520Z"/>
+  <g transform="translate(126 338)">
+    <circle class="fill" cx="0" cy="-54" r="8"/>
+    <path class="line" d="M0 -44L0 -10M-18 -26L18 -26M0 -10L-16 18M0 -10L16 18"/>
+  </g>
+  <g transform="translate(300 302)">
+    <circle class="fill" cx="0" cy="-54" r="8"/>
+    <path class="line" d="M0 -44L0 -10M-18 -26L18 -26M0 -10L-16 18M0 -10L16 18"/>
+  </g>
+  <g transform="translate(474 338)">
+    <circle class="fill" cx="0" cy="-54" r="8"/>
+    <path class="line" d="M0 -44L0 -10M-18 -26L18 -26M0 -10L-16 18M0 -10L16 18"/>
+  </g>
+  <path class="line" d="M84 168C156 128 212 128 282 170"/>
+  <path class="line" d="M318 170C388 128 444 128 516 168"/>
+  <path class="line" d="M124 98L178 146L232 98L286 146L340 98L394 146L448 98"/>
+</svg>

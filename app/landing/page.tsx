@@ -37,12 +37,12 @@ export default function LandingPage() {
   function goToMeeting(rawCode: string) {
     const normalizedCode = normalizeMeetingCode(rawCode);
     if (!normalizedCode) {
-      setError("Enter a valid meeting link or meeting code.");
+      setError("Enter a valid code.");
       return;
     }
 
     if (name.trim().length < 2) {
-      setError("Enter your name before joining.");
+      setError("Enter your name.");
       return;
     }
 
@@ -52,7 +52,44 @@ export default function LandingPage() {
     });
 
     setError("");
+
+    if (role === "teacher") {
+      void joinAsTeacher(normalizedCode);
+      return;
+    }
+
     router.push(toMeetingPath(normalizedCode));
+  }
+
+  async function joinAsTeacher(normalizedCode: string) {
+    const response = await fetch("/api/meetings/join", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        meetingCode: normalizedCode,
+        displayName: name.trim(),
+        role: "teacher"
+      })
+    });
+
+    if (!response.ok) {
+      const errorPayload = (await response.json().catch(() => ({}))) as { message?: string };
+      setError(errorPayload.message ?? "Could not join this meeting.");
+      return;
+    }
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      participant?: { id?: string };
+      meetingCode?: string;
+    };
+    const safeMeetingCode = normalizeMeetingCode(payload.meetingCode ?? normalizedCode) ?? normalizedCode;
+    if (payload.participant?.id) {
+      sessionStorage.setItem(`meeting_participant_session_${safeMeetingCode}`, payload.participant.id);
+    }
+
+    router.push(`${toMeetingPath(safeMeetingCode)}/room`);
   }
 
   function handleJoin() {
@@ -67,17 +104,12 @@ export default function LandingPage() {
 
   return (
     <main className="entry-shell landing-shell">
-      <section className="join-card glass-panel" aria-labelledby="join-title">
+      <div className="landing-art-layer" aria-hidden="true" />
+      <section className="join-card glass-panel" aria-label="Meeting entry">
         <div className="access-panel">
           <a className="brand" href="/">
-            <span className="brand-mark">M</span>
-            <span className="meetigate-font">Meetigate</span>
+            <span className="meetigate-font landing-brand-wordmark">Meetigate</span>
           </a>
-
-          <div className="join-copy">
-            <p className="eyebrow">Classroom access</p>
-            <h1 id="join-title">Meeting access</h1>
-          </div>
 
           <div className="role-switch" aria-label="Choose account type">
             <button
@@ -103,21 +135,21 @@ export default function LandingPage() {
               handleJoin();
             }}
           >
-            <label htmlFor="user-name">{role === "teacher" ? "Teacher Name" : "Student Name"}</label>
+            <label htmlFor="user-name">Name</label>
             <input
               id="user-name"
               name="user-name"
-              placeholder={role === "teacher" ? "Mr. Sharma" : "Aarav Patel"}
+              placeholder={role === "teacher" ? "Teacher name" : "Student name"}
               type="text"
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
 
-            <label htmlFor="meeting-code">Meeting link or code</label>
+            <label htmlFor="meeting-code">Code</label>
             <input
               id="meeting-code"
               name="meeting-code"
-              placeholder="meetigate.app/class/physics-10a"
+              placeholder="Code or link"
               type="text"
               value={meetingCode}
               onChange={(event) => setMeetingCode(event.target.value)}
@@ -125,13 +157,13 @@ export default function LandingPage() {
 
             {error ? <p className="form-error">{error}</p> : null}
 
-            <div className="form-actions">
+            <div className={`form-actions ${role === "teacher" ? "form-actions-teacher" : ""}`}>
               <button className="primary-action" type="submit" disabled={!meetingCode.trim()}>
-                Join meeting
+                Join
               </button>
               {role === "teacher" ? (
                 <button className="ghost-action" type="button" onClick={handleCreateLink}>
-                  Create meeting link
+                  New link
                 </button>
               ) : null}
             </div>
@@ -141,3 +173,4 @@ export default function LandingPage() {
     </main>
   );
 }
+

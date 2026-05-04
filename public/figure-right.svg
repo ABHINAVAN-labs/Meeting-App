@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 440">
+  <defs>
+    <linearGradient id="kurtaA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7fd0e6"/>
+      <stop offset="100%" stop-color="#3d88c9"/>
+    </linearGradient>
+    <linearGradient id="skinB" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f1be96"/>
+      <stop offset="100%" stop-color="#cf926d"/>
+    </linearGradient>
+  </defs>
+  <g opacity="0.96">
+    <ellipse cx="190" cy="392" rx="90" ry="22" fill="#241528" opacity="0.28"/>
+    <circle cx="190" cy="106" r="42" fill="url(#skinB)"/>
+    <path d="M148 102C148 70 168 46 196 46C224 46 245 69 245 104C245 116 239 128 230 136C226 124 216 114 202 110C188 106 173 109 160 117C154 113 148 109 148 102Z" fill="#23192f"/>
+    <path d="M126 196C136 154 158 136 188 136C220 136 244 154 252 196L268 302H108L126 196Z" fill="url(#kurtaA)"/>
+    <rect x="176" y="170" width="26" height="128" fill="#f8e8cc" opacity="0.3"/>
+    <path d="M126 202L92 236L110 252L142 220Z" fill="#f1be96"/>
+    <path d="M250 202L286 236L268 252L236 220Z" fill="#f1be96"/>
+    <path d="M108 302H268L286 372H90Z" fill="#f6d26a"/>
+    <path d="M90 372H286L252 410H124Z" fill="#e19f3f"/>
+    <circle cx="124" cy="232" r="7" fill="#ffffff" opacity="0.66"/>
+    <circle cx="252" cy="232" r="7" fill="#ffffff" opacity="0.66"/>
+  </g>
+</svg>
