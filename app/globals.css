@@ -693,6 +693,23 @@ h1 {
   box-shadow: 0 12px 28px rgba(255, 180, 91, 0.18);
 }
 
+.preview-controls button.preview-icon-button {
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  width: 58px;
+  min-height: 58px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+}
+
+.preview-icon-button svg {
+  width: 30px;
+  height: 30px;
+  fill: currentColor;
+}
+
 .preview-controls button:hover {
   transform: translateY(-2px);
 }
@@ -937,7 +954,7 @@ h1 {
 }
 
 .home-shell {
-  --home-frame-size: clamp(38px, 4vw, 72px);
+  --home-frame-size: 0px;
   position: relative;
   z-index: 1;
   display: grid;
@@ -963,6 +980,7 @@ h1 {
   height: 100% !important;
   object-fit: cover;
   object-position: center 52%;
+  transform: scale(1.03);
   opacity: 0.92;
   padding: 0;
 }
@@ -978,6 +996,7 @@ h1 {
 
 .home-shell::before,
 .home-shell::after {
+  display: none;
   position: absolute;
   top: 0;
   bottom: 0;
@@ -1000,6 +1019,7 @@ h1 {
 }
 
 .home-strip {
+  display: none;
   position: absolute;
   left: var(--home-frame-size);
   right: var(--home-frame-size);
@@ -1341,8 +1361,8 @@ h1 {
 
 .room-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  justify-items: center;
+  gap: 14px;
   min-height: 0;
 }
 
@@ -1367,6 +1387,32 @@ h1 {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(7, 11, 23, 0.3);
+}
+
+.teacher-tile {
+  width: min(660px, 100%);
+}
+
+.teacher-tile .participant-video,
+.teacher-tile .participant-placeholder {
+  height: 300px;
+}
+
+.student-tile-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.student-tile {
+  width: min(320px, 100%);
+}
+
+.student-tile .participant-video,
+.student-tile .participant-placeholder {
+  height: 150px;
 }
 
 .participant-video video {
@@ -1404,6 +1450,60 @@ h1 {
   color: #151923;
   background: linear-gradient(135deg, var(--mint), var(--sky));
   box-shadow: 0 12px 28px rgba(255, 180, 91, 0.18);
+}
+
+.room-controls button.room-icon-button {
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  width: 58px;
+  min-height: 58px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #111111;
+}
+
+.room-controls button.room-icon-button.active {
+  color: #ffffff;
+  background: #111111;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.room-controls button.room-icon-button.muted {
+  color: #111111;
+  background: #ffffff;
+}
+
+.room-controls button.mic-icon-button.mic-on {
+  color: #ffffff;
+  background: #111111;
+}
+
+.room-controls button.mic-icon-button.mic-off {
+  color: #111111;
+  background: #ffffff;
+}
+
+.room-controls button.camera-icon-button.camera-on,
+.preview-controls button.camera-icon-button.camera-on,
+.preview-controls button.mic-icon-button.mic-on {
+  color: #ffffff;
+  background: #111111;
+}
+
+.room-controls button.camera-icon-button.camera-off,
+.preview-controls button.camera-icon-button.camera-off,
+.preview-controls button.mic-icon-button.mic-off {
+  color: #111111;
+  background: #ffffff;
+}
+
+.room-icon-button svg {
+  width: 30px;
+  height: 30px;
+  fill: currentColor;
 }
 
 .room-controls button:hover {

@@ -26,6 +26,7 @@ type RemoteTile = {
   role: string;
   publication?: RemoteTrackPublication;
   audioPublication?: RemoteTrackPublication;
+  stream?: MediaStream;
 };
 
 type ParticipantRole = "student" | "teacher";
@@ -56,10 +57,16 @@ function prefsKey(meetingCode: string) {
   return `${PREFS_STORAGE_PREFIX}${meetingCode}`;
 }
 
-function RemoteVideo({ publication }: { publication?: RemoteTrackPublication }) {
+function RemoteVideo({ publication, stream }: { publication?: RemoteTrackPublication; stream?: MediaStream }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => undefined);
+      return;
+    }
+
     const track = publication?.videoTrack;
     const node = videoRef.current;
 
@@ -71,7 +78,7 @@ function RemoteVideo({ publication }: { publication?: RemoteTrackPublication }) 
     return () => {
       track.detach(node);
     };
-  }, [publication]);
+  }, [publication, stream]);
 
   return <video ref={videoRef} autoPlay playsInline suppressHydrationWarning />;
 }
@@ -151,6 +158,9 @@ export default function MeetingRoomPage() {
   const isLeavingRef = useRef(false);
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localPreviewStreamRef = useRef<MediaStream | null>(null);
+  const fallbackPeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const fallbackParticipantsRef = useRef<Map<string, ActiveParticipant>>(new Map());
   const hasBeenRemovedRef = useRef(false);
 
   useEffect(() => {
@@ -239,6 +249,127 @@ export default function MeetingRoomPage() {
     ) as LocalTrackPublication | undefined;
 
     return Boolean(publication?.track && !publication.isMuted);
+  }
+
+  async function sendFallbackSignal(
+    toParticipantId: string,
+    signalType: "offer" | "answer" | "ice-candidate",
+    signal: RTCSessionDescriptionInit | RTCIceCandidateInit
+  ) {
+    await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/signal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toParticipantId, signalType, signal })
+    }).catch(() => undefined);
+  }
+
+  function addLocalTracksToFallbackPeer(peer: RTCPeerConnection) {
+    const stream = localPreviewStreamRef.current;
+    if (!stream) {
+      return;
+    }
+
+    for (const track of stream.getTracks()) {
+      const alreadyAdded = peer.getSenders().some((sender) => sender.track === track);
+      if (!alreadyAdded) {
+        peer.addTrack(track, stream);
+      }
+    }
+  }
+
+  async function ensureFallbackPeer(participant: ActiveParticipant) {
+    if (!participantIdRef.current || participant.id === participantIdRef.current || participant.status !== "active") {
+      return null;
+    }
+
+    fallbackParticipantsRef.current.set(participant.id, participant);
+    const existing = fallbackPeersRef.current.get(participant.id);
+    if (existing) {
+      addLocalTracksToFallbackPeer(existing);
+      return existing;
+    }
+
+    const peer = new RTCPeerConnection();
+    fallbackPeersRef.current.set(participant.id, peer);
+    peer.addTransceiver("video", { direction: "recvonly" });
+    peer.addTransceiver("audio", { direction: "recvonly" });
+    addLocalTracksToFallbackPeer(peer);
+
+    peer.onicecandidate = (event) => {
+      if (event.candidate) {
+        sendFallbackSignal(participant.id, "ice-candidate", event.candidate);
+      }
+    };
+
+    peer.ontrack = (event) => {
+      const stream = event.streams[0];
+      if (!stream) {
+        return;
+      }
+
+      setRemoteParticipants((prev) => {
+        const filtered = prev.filter((tile) => tile.id !== participant.id);
+        return [
+          ...filtered,
+          {
+            id: participant.id,
+            name: participant.displayName,
+            role: participant.role,
+            stream
+          }
+        ];
+      });
+    };
+
+    peer.onnegotiationneeded = async () => {
+      if (!participantIdRef.current || participantIdRef.current > participant.id) {
+        return;
+      }
+
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      await sendFallbackSignal(participant.id, "offer", offer);
+    };
+
+    return peer;
+  }
+
+  function closeFallbackPeer(participantId: string) {
+    fallbackPeersRef.current.get(participantId)?.close();
+    fallbackPeersRef.current.delete(participantId);
+    fallbackParticipantsRef.current.delete(participantId);
+    setRemoteParticipants((prev) => prev.filter((tile) => tile.id !== participantId));
+  }
+
+  async function handleFallbackSignal(event: {
+    fromParticipantId: string;
+    signalType: "offer" | "answer" | "ice-candidate";
+    signal: RTCSessionDescriptionInit | RTCIceCandidateInit;
+  }) {
+    const participant = fallbackParticipantsRef.current.get(event.fromParticipantId);
+    if (!participant) {
+      return;
+    }
+
+    const peer = await ensureFallbackPeer(participant);
+    if (!peer) {
+      return;
+    }
+
+    if (event.signalType === "ice-candidate") {
+      await peer.addIceCandidate(event.signal as RTCIceCandidateInit).catch(() => undefined);
+      return;
+    }
+
+    if (event.signalType === "offer") {
+      await peer.setRemoteDescription(event.signal as RTCSessionDescriptionInit);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      await sendFallbackSignal(event.fromParticipantId, "answer", answer);
+      return;
+    }
+
+    await peer.setRemoteDescription(event.signal as RTCSessionDescriptionInit);
   }
 
   async function connectRoom() {
@@ -415,27 +546,76 @@ export default function MeetingRoomPage() {
 
     roomRef.current?.disconnect();
     roomRef.current = null;
+    stopLocalPreviewCamera();
   }
 
   async function toggleCamera() {
     const room = roomRef.current;
+    const next = !cameraEnabled;
+
     if (!room) {
+      if (next) {
+        setCameraEnabled(await startLocalPreviewCamera());
+      } else {
+        stopLocalPreviewCamera();
+        setCameraEnabled(false);
+      }
       return;
     }
 
-    const next = !cameraEnabled;
     await room.localParticipant.setCameraEnabled(next);
     setCameraEnabled(next);
     await attachLocalVideo(room);
   }
 
+  async function startLocalPreviewCamera() {
+    if (localPreviewStreamRef.current) {
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localPreviewStreamRef.current;
+        await localVideoRef.current.play().catch(() => undefined);
+      }
+      for (const peer of fallbackPeersRef.current.values()) {
+        addLocalTracksToFallbackPeer(peer);
+      }
+      return true;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      localPreviewStreamRef.current = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        await localVideoRef.current.play().catch(() => undefined);
+      }
+      for (const peer of fallbackPeersRef.current.values()) {
+        addLocalTracksToFallbackPeer(peer);
+      }
+      setAccessError("");
+      return true;
+    } catch (error) {
+      const details = formatUnknownError(error);
+      setAccessError(`Camera unavailable: ${details.message}`);
+      return false;
+    }
+  }
+
+  function stopLocalPreviewCamera() {
+    localPreviewStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localPreviewStreamRef.current = null;
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+  }
+
   async function toggleMic() {
     const room = roomRef.current;
+    const next = !micEnabled;
+
     if (!room) {
+      setMicEnabled(next);
       return;
     }
 
-    const next = !micEnabled;
     await room.localParticipant.setMicrophoneEnabled(next);
     setMicEnabled(next);
   }
@@ -454,8 +634,72 @@ export default function MeetingRoomPage() {
       isLeavingRef.current = true;
       roomRef.current?.disconnect();
       roomRef.current = null;
+      stopLocalPreviewCamera();
     };
   }, [readableMeetingCode]);
+
+  useEffect(() => {
+    if (!readableMeetingCode) {
+      return;
+    }
+
+    const events = new EventSource(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/events`);
+    events.onmessage = (message) => {
+      const event = JSON.parse(message.data) as
+        | { type: "snapshot"; participants: ActiveParticipant[]; sessionParticipantId: string }
+        | { type: "participant-joined"; participant: ActiveParticipant }
+        | { type: "participant-left"; participantId: string }
+        | { type: "participant-status-updated"; participantId: string; status: ParticipantStatus }
+        | {
+            type: "signal";
+            fromParticipantId: string;
+            signalType: "offer" | "answer" | "ice-candidate";
+            signal: RTCSessionDescriptionInit | RTCIceCandidateInit;
+          };
+
+      if (event.type === "snapshot") {
+        participantIdRef.current = event.sessionParticipantId;
+        for (const participant of event.participants.filter((item) => item.status === "active")) {
+          if (participant.id !== event.sessionParticipantId) {
+            ensureFallbackPeer(participant);
+          }
+        }
+        return;
+      }
+
+      if (event.type === "participant-joined" && event.participant.status === "active") {
+        ensureFallbackPeer(event.participant);
+        return;
+      }
+
+      if (event.type === "participant-status-updated" && event.status !== "active") {
+        closeFallbackPeer(event.participantId);
+        return;
+      }
+
+      if (event.type === "participant-left") {
+        closeFallbackPeer(event.participantId);
+        return;
+      }
+
+      if (event.type === "signal") {
+        handleFallbackSignal(event);
+      }
+    };
+
+    return () => {
+      events.close();
+      for (const participantId of fallbackPeersRef.current.keys()) {
+        closeFallbackPeer(participantId);
+      }
+    };
+  }, [readableMeetingCode]);
+
+  useEffect(() => {
+    for (const participant of activeStudents) {
+      ensureFallbackPeer(participant);
+    }
+  }, [activeStudents]);
 
   useEffect(() => {
     if (!readableMeetingCode) {
@@ -580,6 +824,9 @@ export default function MeetingRoomPage() {
     setRaisedHands((prev) => prev.filter((participant) => participant.id !== participantId));
   }
 
+  const teacherRemote = remoteParticipants.find((participant) => participant.role === "teacher");
+  const studentRemotes = remoteParticipants.filter((participant) => participant.role !== "teacher");
+
   return (
     <main className="entry-shell room-shell">
       <section className="capture-card glass-panel" aria-label="Meeting room">
@@ -594,41 +841,72 @@ export default function MeetingRoomPage() {
         </div>
 
         <div className="room-grid" aria-label="Participants grid">
-          <article className="participant-card self-tile">
-            <p>You</p>
-            <div className="participant-video">
-              <video ref={localVideoRef} autoPlay muted playsInline suppressHydrationWarning />
-              {!cameraEnabled ? (
-                <div className="camera-off-layer">
-                  <strong>Camera off</strong>
-                  <span>Your camera is currently disabled.</span>
-                </div>
-              ) : null}
-            </div>
-          </article>
+          {selfRole === "teacher" ? (
+            <article className="participant-card self-tile teacher-tile">
+              <p>You</p>
+              <div className="participant-video">
+                <video ref={localVideoRef} autoPlay muted playsInline suppressHydrationWarning />
+                {!cameraEnabled ? (
+                  <div className="camera-off-layer">
+                    <strong>Camera off</strong>
+                    <span>Your camera is currently disabled.</span>
+                  </div>
+                ) : null}
+              </div>
+            </article>
+          ) : teacherRemote ? (
+            <article className="participant-card teacher-tile" key={teacherRemote.id}>
+              <p>{teacherRemote.name} ({teacherRemote.role})</p>
+              <div className="participant-video">
+                <RemoteAudio publication={teacherRemote.audioPublication} />
+                {teacherRemote.publication?.videoTrack || teacherRemote.stream ? (
+                  <RemoteVideo publication={teacherRemote.publication} stream={teacherRemote.stream} />
+                ) : (
+                  <div className="participant-placeholder">Connected without video</div>
+                )}
+              </div>
+            </article>
+          ) : null}
 
-          {remoteParticipants.length > 0 ? (
-            remoteParticipants.map((participant) => (
-              <article className="participant-card" key={participant.id}>
-                <p>
-                  {participant.name} ({participant.role})
-                </p>
+          <div className="student-tile-row">
+            {selfRole === "student" ? (
+              <article className="participant-card self-tile student-tile">
+                <p>You</p>
                 <div className="participant-video">
-                  <RemoteAudio publication={participant.audioPublication} />
-                  {participant.publication?.videoTrack ? (
-                    <RemoteVideo publication={participant.publication} />
-                  ) : (
-                    <div className="participant-placeholder">Connected without video</div>
-                  )}
+                  <video ref={localVideoRef} autoPlay muted playsInline suppressHydrationWarning />
+                  {!cameraEnabled ? (
+                    <div className="camera-off-layer">
+                      <strong>Camera off</strong>
+                      <span>Your camera is currently disabled.</span>
+                    </div>
+                  ) : null}
                 </div>
               </article>
-            ))
-          ) : (
-            <article className="participant-card">
-              <p>Waiting Room</p>
-              <div className="participant-placeholder">No other participants yet</div>
-            </article>
-          )}
+            ) : null}
+
+            {studentRemotes.length > 0 ? (
+              studentRemotes.map((participant) => (
+                <article className="participant-card student-tile" key={participant.id}>
+                  <p>
+                    {participant.name} ({participant.role})
+                  </p>
+                  <div className="participant-video">
+                    <RemoteAudio publication={participant.audioPublication} />
+                    {participant.publication?.videoTrack || participant.stream ? (
+                      <RemoteVideo publication={participant.publication} stream={participant.stream} />
+                    ) : (
+                      <div className="participant-placeholder">Connected without video</div>
+                    )}
+                  </div>
+                </article>
+              ))
+            ) : selfRole === "teacher" ? (
+              <article className="participant-card student-tile">
+                <p>Waiting Room</p>
+                <div className="participant-placeholder">No other participants yet</div>
+              </article>
+            ) : null}
+          </div>
         </div>
 
         {accessError ? <p className="form-error">{accessError}</p> : null}
@@ -639,11 +917,33 @@ export default function MeetingRoomPage() {
               {isHandRaised ? "Lower hand" : "Raise hand"}
             </button>
           ) : null}
-          <button className={cameraEnabled ? "active" : ""} type="button" onClick={toggleCamera}>
-            {cameraEnabled ? "Camera on" : "Camera off"}
+          <button
+            aria-label={cameraEnabled ? "Camera on" : "Camera off"}
+            className={`room-icon-button camera-icon-button ${cameraEnabled ? "camera-on" : "camera-off"}`}
+            title={cameraEnabled ? "Camera on" : "Camera off"}
+            type="button"
+            onClick={toggleCamera}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M3 7.8C3 6.8 3.8 6 4.8 6h8.4c1 0 1.8.8 1.8 1.8v8.4c0 1-.8 1.8-1.8 1.8H4.8c-1 0-1.8-.8-1.8-1.8V7.8Z" />
+              <path d="m16 10 4.1-2.2c.4-.2.9.1.9.6v7.2c0 .5-.5.8-.9.6L16 14v-4Z" />
+              {!cameraEnabled ? <path d="M5 5l14 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" /> : null}
+            </svg>
           </button>
-          <button className={micEnabled ? "active" : ""} type="button" onClick={toggleMic}>
-            {micEnabled ? "Mic on" : "Mic off"}
+          <button
+            aria-label={micEnabled ? "Mic on" : "Mic off"}
+            className={`room-icon-button mic-icon-button ${micEnabled ? "mic-on" : "mic-off"}`}
+            title={micEnabled ? "Mic on" : "Mic off"}
+            type="button"
+            onClick={toggleMic}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M12 14.5c1.7 0 3-1.3 3-3V6c0-1.7-1.3-3-3-3S9 4.3 9 6v5.5c0 1.7 1.3 3 3 3Z" />
+              <path d="M18 11.5c0 3.1-2.4 5.5-6 5.5s-6-2.4-6-5.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+              <path d="M12 17v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+              <path d="M9 21h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+              {!micEnabled ? <path d="M5 5l14 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" /> : null}
+            </svg>
           </button>
         </div>
 
