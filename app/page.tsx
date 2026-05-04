@@ -27,7 +27,7 @@ export default function Home() {
         <p className="home-kicker">Zero Lag. Full Attention</p>
         <h1 className="home-brand-title meetigate-font">Meetigate</h1>
         <p className="home-copy">
-          A simple meeting space for teachers and students to join, host, and keep class moving.
+          We help teachers and students stay connected and learn without interruption.
         </p>
         <div className="home-actions">
           <Link className="primary-action home-continue" href="/landing">
