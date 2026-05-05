@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "framer-motion": "^12.38.0",
     "livekit-client": "^2.18.8",
     "livekit-server-sdk": "^2.15.2",
     "next": "^16.2.4",
