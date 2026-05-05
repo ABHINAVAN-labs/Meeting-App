@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import Script from "next/script";
 import { Nunito, Oxygen } from "next/font/google";
 
 const oxygen = Oxygen({
@@ -15,16 +15,8 @@ const nunito = Nunito({
 export default function Home() {
   return (
     <>
-      <main className="home-shell">
+      <main className="home-shell" suppressHydrationWarning>
         <div className="home-bg-wrap" aria-hidden="true">
-          <Image
-            src="/meetigate-home-background.png"
-            alt=""
-            fill
-            priority
-            className="home-bg-art"
-            sizes="100vw"
-          />
           <div className="home-bg-overlay" />
         </div>
         <section className="home-card" aria-label="Meeting app entry">
@@ -42,7 +34,8 @@ export default function Home() {
           </div>
         </section>
       </main>
-      <script
+      <Script
+        id="remove-home-canvases"
         dangerouslySetInnerHTML={{
           __html:
             'document.querySelectorAll(".home-shell canvas.p5Canvas, .home-shell #defaultCanvas0").forEach(function(canvas){canvas.remove();});'

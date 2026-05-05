@@ -969,18 +969,16 @@ h1 {
   position: absolute;
   inset: var(--home-frame-size);
   z-index: 0;
-  background:
-    radial-gradient(circle at 22% 28%, rgba(255, 255, 255, 0.42), transparent 24rem),
-    linear-gradient(135deg, #ffe372 0%, #f6c94c 46%, #f7a54f 100%);
+  background: url("/meetigate-home-background.png") center / 103% auto no-repeat;
 }
 
 .home-bg-art {
   inset: 0;
   width: 100% !important;
   height: 100% !important;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center 52%;
-  transform: scale(1.03);
+  transform: scale(1.12);
   opacity: 0.92;
   padding: 0;
 }
@@ -1053,12 +1051,7 @@ h1 {
 }
 
 .home-card::before {
-  position: absolute;
-  inset: -28px -36px;
-  z-index: -1;
-  content: "";
-  background: radial-gradient(ellipse at center, rgba(255, 239, 166, 0.9), rgba(255, 221, 91, 0.36) 58%, transparent 74%);
-  filter: blur(10px);
+  display: none;
 }
 
 .home-kicker {
@@ -1159,7 +1152,7 @@ h1 {
     inset: 0;
     width: 100% !important;
     height: 100% !important;
-    object-fit: cover;
+    object-fit: contain;
     object-position: center 54%;
     padding: 0;
     opacity: 0.9;
