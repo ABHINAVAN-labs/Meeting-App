@@ -1,6 +1,6 @@
-import Link from "next/link";
 import Script from "next/script";
 import { Nunito, Oxygen } from "next/font/google";
+import HomeContinueTransition from "./HomeContinueTransition";
 
 const oxygen = Oxygen({
   subsets: ["latin"],
@@ -28,9 +28,7 @@ export default function Home() {
             We help teachers and students stay connected and learn without interruption.
           </p>
           <div className="home-actions">
-            <Link className="primary-action home-continue" href="/landing">
-              Continue
-            </Link>
+            <HomeContinueTransition />
           </div>
         </section>
       </main>

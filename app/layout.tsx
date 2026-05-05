@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import InteractiveBackground from "./InteractiveBackground";
+import PeacockRouteTransition from "./PeacockRouteTransition";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <InteractiveBackground />
         {children}
+        <PeacockRouteTransition />
       </body>
     </html>
   );
