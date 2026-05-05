@@ -319,11 +319,33 @@ export default function MeetingCodePage() {
         </div>
 
         <div className="preview-controls" aria-label="Preview controls">
-          <button className={cameraEnabled ? "active" : ""} type="button" onClick={toggleCamera}>
-            {cameraEnabled ? "Camera on" : "Camera off"}
+          <button
+            aria-label={cameraEnabled ? "Camera on" : "Camera off"}
+            className={`preview-icon-button camera-icon-button ${cameraEnabled ? "camera-on" : "camera-off"}`}
+            title={cameraEnabled ? "Camera on" : "Camera off"}
+            type="button"
+            onClick={toggleCamera}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M3 7.8C3 6.8 3.8 6 4.8 6h8.4c1 0 1.8.8 1.8 1.8v8.4c0 1-.8 1.8-1.8 1.8H4.8c-1 0-1.8-.8-1.8-1.8V7.8Z" />
+              <path d="m16 10 4.1-2.2c.4-.2.9.1.9.6v7.2c0 .5-.5.8-.9.6L16 14v-4Z" />
+              {!cameraEnabled ? <path d="M5 5l14 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" /> : null}
+            </svg>
           </button>
-          <button className={micEnabled ? "active" : ""} type="button" onClick={toggleMic}>
-            {micEnabled ? "Mic on" : "Mic off"}
+          <button
+            aria-label={micEnabled ? "Mic on" : "Mic off"}
+            className={`preview-icon-button mic-icon-button ${micEnabled ? "mic-on" : "mic-off"}`}
+            title={micEnabled ? "Mic on" : "Mic off"}
+            type="button"
+            onClick={toggleMic}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M12 14.5c1.7 0 3-1.3 3-3V6c0-1.7-1.3-3-3-3S9 4.3 9 6v5.5c0 1.7 1.3 3 3 3Z" />
+              <path d="M18 11.5c0 3.1-2.4 5.5-6 5.5s-6-2.4-6-5.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+              <path d="M12 17v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+              <path d="M9 21h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+              {!micEnabled ? <path d="M5 5l14 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" /> : null}
+            </svg>
           </button>
         </div>
 
