@@ -99,7 +99,7 @@ export default function LandingPage() {
   function handleCreateLink() {
     const newCode = buildGeneratedCode();
     setMeetingCode(newCode);
-    goToMeeting(newCode);
+    setError("");
   }
 
   return (
