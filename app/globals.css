@@ -1459,9 +1459,30 @@ h1 {
 
 .room-grid {
   display: grid;
+  position: relative;
   justify-items: center;
   gap: 14px;
   min-height: 0;
+}
+
+.waiting-room-indicator {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(7, 11, 23, 0.52);
+  color: #f5df8c;
+}
+
+.waiting-room-indicator svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
 }
 
 .participant-card {
@@ -1632,6 +1653,40 @@ h1 {
   cursor: pointer;
   font-weight: 800;
   background: rgba(255, 255, 255, 0.12);
+}
+
+.room-actions button.room-icon-button.leave-icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  min-height: 58px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  color: #ffffff;
+  background: #e53935;
+}
+
+.room-actions button.room-icon-button.leave-icon-button:hover {
+  transform: translateY(-2px);
+  background: #d32f2f;
+}
+
+.room-actions .leave-icon-button .leave-icon-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50%;
+  height: 50%;
+}
+
+.room-actions .leave-icon-button svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
 }
 
 .landing-shell .form-actions.form-actions-teacher {
