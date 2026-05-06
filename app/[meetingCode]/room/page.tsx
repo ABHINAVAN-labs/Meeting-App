@@ -829,6 +829,33 @@ export default function MeetingRoomPage() {
 
   return (
     <main className="entry-shell room-shell">
+      {selfRole === "teacher" && pendingParticipants.length > 0 ? (
+        <div className="join-request-notifications">
+          <button className="join-request-bell" type="button" aria-label={`Pending join requests: ${pendingParticipants.length}`}>
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M18 9.8c0-3.2-2.1-5.8-5-6.5V2h-2v1.3c-2.9.7-5 3.3-5 6.5V14l-1.8 3v1h15.6v-1L18 14V9.8Z" />
+              <path d="M9.8 20a2.2 2.2 0 0 0 4.4 0h-4.4Z" />
+            </svg>
+            <span>{pendingParticipants.length}</span>
+          </button>
+          <div className="join-request-tile" role="menu" aria-label="Pending join requests">
+            {pendingParticipants.map((participant) => (
+              <div key={participant.id} className="join-request-row">
+                <span>{participant.displayName}</span>
+                <div className="join-request-actions">
+                  <button type="button" onClick={() => resolvePending(participant.id, "admit")}>
+                    Approve
+                  </button>
+                  <button type="button" onClick={() => resolvePending(participant.id, "reject")}>
+                    Decline
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <section className="capture-card glass-panel" aria-label="Meeting room">
         <div className="capture-header">
           <div>
@@ -962,27 +989,6 @@ export default function MeetingRoomPage() {
             Leave Room
           </button>
         </div>
-
-        {selfRole === "teacher" ? (
-          <section aria-label="Pending join requests">
-            <h3>Pending requests ({pendingParticipants.length})</h3>
-            {pendingParticipants.length === 0 ? (
-              <p>No students waiting.</p>
-            ) : (
-              pendingParticipants.map((participant) => (
-                <div key={participant.id} className="room-controls">
-                  <span>{participant.displayName}</span>
-                  <button type="button" onClick={() => resolvePending(participant.id, "admit")}>
-                    Approve
-                  </button>
-                  <button type="button" onClick={() => resolvePending(participant.id, "reject")}>
-                    Reject
-                  </button>
-                </div>
-              ))
-            )}
-          </section>
-        ) : null}
 
         {selfRole === "teacher" ? (
           <section aria-label="Raised hands">
