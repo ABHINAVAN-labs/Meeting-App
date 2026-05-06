@@ -153,6 +153,7 @@ export default function MeetingRoomPage() {
   const [activeStudents, setActiveStudents] = useState<ActiveParticipant[]>([]);
   const [selfRole, setSelfRole] = useState<ParticipantRole>("student");
   const [isHandRaised, setIsHandRaised] = useState(false);
+  const [isRaisedHandsPopupOpen, setIsRaisedHandsPopupOpen] = useState(false);
 
   const participantIdRef = useRef("");
   const isLeavingRef = useRef(false);
@@ -826,6 +827,8 @@ export default function MeetingRoomPage() {
 
   const teacherRemote = remoteParticipants.find((participant) => participant.role === "teacher");
   const studentRemotes = remoteParticipants.filter((participant) => participant.role !== "teacher");
+  const latestRaisedHand = raisedHands[raisedHands.length - 1];
+  const additionalRaisedHandsCount = Math.max(0, raisedHands.length - 1);
 
   return (
     <main className="entry-shell room-shell">
@@ -853,6 +856,33 @@ export default function MeetingRoomPage() {
               </div>
             ))}
           </div>
+        </div>
+      ) : null}
+
+      {raisedHands.length > 0 ? (
+        <div className={`raised-hand-notifications${selfRole === "teacher" && pendingParticipants.length > 0 ? " with-join-bell" : ""}`}>
+          <button
+            type="button"
+            className={`raised-hand-popup-trigger${isRaisedHandsPopupOpen ? " open" : ""}`}
+            aria-label="Raised hands"
+            aria-expanded={isRaisedHandsPopupOpen}
+            aria-controls="raised-hands-list"
+            onClick={() => setIsRaisedHandsPopupOpen((prev) => !prev)}
+          >
+            <img alt="" aria-hidden="true" src="/hand-back-right.svg" />
+            <span>
+              {latestRaisedHand?.displayName}
+              {additionalRaisedHandsCount > 0 ? ` +${additionalRaisedHandsCount}` : ""}
+            </span>
+          </button>
+
+          {isRaisedHandsPopupOpen ? (
+            <div id="raised-hands-list" className="raised-hand-popup-list" role="menu" aria-label="Participants raising hand">
+              {raisedHands.map((participant) => (
+                <p key={participant.id}>{participant.displayName}</p>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -943,8 +973,14 @@ export default function MeetingRoomPage() {
 
         <div className="room-controls">
           {selfRole === "student" ? (
-            <button className={isHandRaised ? "active" : ""} type="button" onClick={toggleRaiseHand}>
-              {isHandRaised ? "Lower hand" : "Raise hand"}
+            <button
+              aria-label={isHandRaised ? "Lower hand" : "Raise hand"}
+              className={`room-icon-button hand-icon-button ${isHandRaised ? "hand-on" : "hand-off"}`}
+              title={isHandRaised ? "Lower hand" : "Raise hand"}
+              type="button"
+              onClick={toggleRaiseHand}
+            >
+              <img alt="" aria-hidden="true" src="/hand-back-right.svg" />
             </button>
           ) : null}
           <button
@@ -1005,17 +1041,6 @@ export default function MeetingRoomPage() {
             </span>
           </button>
         </div>
-
-        {selfRole === "teacher" ? (
-          <section aria-label="Raised hands">
-            <h3>Raised hands ({raisedHands.length})</h3>
-            {raisedHands.length === 0 ? (
-              <p>No hands raised.</p>
-            ) : (
-              raisedHands.map((participant) => <p key={participant.id}>{participant.displayName}</p>)
-            )}
-          </section>
-        ) : null}
 
         {selfRole === "teacher" ? (
           <section aria-label="Active students">

@@ -1359,6 +1359,78 @@ h1 {
   z-index: 20;
 }
 
+.raised-hand-notifications {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 19;
+}
+
+.raised-hand-notifications.with-join-bell {
+  top: 74px;
+}
+
+.raised-hand-popup-trigger {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: min(290px, calc(100vw - 36px));
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  background: rgba(17, 17, 17, 0.8);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(12px);
+}
+
+.raised-hand-popup-trigger.open {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.raised-hand-popup-trigger img {
+  width: 22px;
+  height: 22px;
+}
+
+.raised-hand-popup-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.raised-hand-popup-list {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  width: min(290px, calc(100vw - 36px));
+  max-height: 180px;
+  padding: 10px;
+  overflow-y: auto;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 12px;
+  background: rgba(17, 17, 17, 0.9);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
+}
+
+.raised-hand-popup-list p {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--ink);
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .join-request-bell {
   position: relative;
   display: grid;
@@ -1619,10 +1691,25 @@ h1 {
   background: #ffffff;
 }
 
+.room-controls button.hand-icon-button.hand-on {
+  color: #ffffff;
+  background: #111111;
+}
+
+.room-controls button.hand-icon-button.hand-off {
+  color: #111111;
+  background: #ffffff;
+}
+
 .room-icon-button svg {
   width: 30px;
   height: 30px;
   fill: currentColor;
+}
+
+.room-icon-button img {
+  width: 30px;
+  height: 30px;
 }
 
 .room-controls button:hover {
