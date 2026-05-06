@@ -25,6 +25,7 @@ export default function HomeContinueTransition() {
       type="button"
       onClick={handleContinue}
       aria-busy={active}
+      suppressHydrationWarning
     >
       Continue
     </button>
