@@ -96,7 +96,8 @@ function FeatherSVG() {
       />
       <path
         d="M60 100 C35 130,35 200,60 220 C85 200,85 130,60 100 Z"
-        fill="#F4C542"
+        // fill="#F4C542"
+        fill="#73bd13"
         stroke="#1F3D36"
         strokeWidth="1.5"
       />
