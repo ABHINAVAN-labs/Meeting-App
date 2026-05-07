@@ -168,6 +168,7 @@ export default function MeetingRoomPage() {
   const localPreviewStreamRef = useRef<MediaStream | null>(null);
   const fallbackPeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const fallbackParticipantsRef = useRef<Map<string, ActiveParticipant>>(new Map());
+  const removedParticipantIdsRef = useRef<Set<string>>(new Set());
   const hasBeenRemovedRef = useRef(false);
 
   useEffect(() => {
@@ -243,7 +244,9 @@ export default function MeetingRoomPage() {
   }
 
   function refreshRemoteParticipants(room: Room) {
-    const participants = [...room.remoteParticipants.values()].map(mapParticipant);
+    const participants = [...room.remoteParticipants.values()]
+      .map(mapParticipant)
+      .filter((participant) => !removedParticipantIdsRef.current.has(participant.id));
     setRemoteParticipants(participants);
   }
 
@@ -842,8 +845,11 @@ export default function MeetingRoomPage() {
       return;
     }
 
+    removedParticipantIdsRef.current.add(participantId);
     setActiveStudents((prev) => prev.filter((participant) => participant.id !== participantId));
     setRaisedHands((prev) => prev.filter((participant) => participant.id !== participantId));
+    setRemoteParticipants((prev) => prev.filter((participant) => participant.id !== participantId));
+    closeFallbackPeer(participantId);
   }
 
   async function copyMeetingLink() {
