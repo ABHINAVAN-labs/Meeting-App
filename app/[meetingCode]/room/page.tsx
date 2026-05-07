@@ -135,6 +135,10 @@ function isExpectedDisconnect(reason: DisconnectReason | undefined) {
   return reason === DisconnectReason.CLIENT_INITIATED || reason === DisconnectReason.PARTICIPANT_REMOVED;
 }
 
+function isIgnoredLiveKitDataChannelError(message: string) {
+  return message.includes("Unknown DataChannel error on lossy") || message.includes("Unknown DataChannel error on reliable");
+}
+
 export default function MeetingRoomPage() {
   const params = useParams<{ meetingCode: string }>();
   const router = useRouter();
@@ -165,6 +169,16 @@ export default function MeetingRoomPage() {
   const hasBeenRemovedRef = useRef(false);
 
   useEffect(() => {
+    const originalConsoleError = console.error;
+    console.error = (...args: Parameters<typeof console.error>) => {
+      const message = typeof args[0] === "string" ? args[0] : "";
+      if (isIgnoredLiveKitDataChannelError(message)) {
+        return;
+      }
+
+      originalConsoleError(...args);
+    };
+
     setLogLevel("warn");
     setLogExtension((level, msg, context) => {
       if (level !== LogLevel.error) {
@@ -172,7 +186,7 @@ export default function MeetingRoomPage() {
       }
 
       const text = String(msg ?? "");
-      if (text.includes("Unknown DataChannel error on lossy") || text.includes("Unknown DataChannel error on reliable")) {
+      if (isIgnoredLiveKitDataChannelError(text)) {
         return;
       }
 
@@ -194,6 +208,7 @@ export default function MeetingRoomPage() {
 
     window.addEventListener("unhandledrejection", handleUnhandledRejection);
     return () => {
+      console.error = originalConsoleError;
       window.removeEventListener("unhandledrejection", handleUnhandledRejection);
     };
   }, []);
