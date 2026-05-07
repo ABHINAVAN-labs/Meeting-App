@@ -158,8 +158,10 @@ export default function MeetingRoomPage() {
   const [selfRole, setSelfRole] = useState<ParticipantRole | null>(null);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isRaisedHandsPopupOpen, setIsRaisedHandsPopupOpen] = useState(false);
+  const [isCopiedToastVisible, setIsCopiedToastVisible] = useState(false);
 
   const participantIdRef = useRef("");
+  const copyToastTimeoutRef = useRef<number | null>(null);
   const isLeavingRef = useRef(false);
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -648,6 +650,9 @@ export default function MeetingRoomPage() {
       roomRef.current?.disconnect();
       roomRef.current = null;
       stopLocalPreviewCamera();
+      if (copyToastTimeoutRef.current) {
+        window.clearTimeout(copyToastTimeoutRef.current);
+      }
     };
   }, [readableMeetingCode]);
 
@@ -841,6 +846,22 @@ export default function MeetingRoomPage() {
     setRaisedHands((prev) => prev.filter((participant) => participant.id !== participantId));
   }
 
+  async function copyMeetingLink() {
+    const meetingLink = `${window.location.origin}/${encodeURIComponent(readableMeetingCode || rawMeetingCode)}`;
+    try {
+      await navigator.clipboard.writeText(meetingLink);
+      setIsCopiedToastVisible(true);
+      if (copyToastTimeoutRef.current) {
+        window.clearTimeout(copyToastTimeoutRef.current);
+      }
+      copyToastTimeoutRef.current = window.setTimeout(() => {
+        setIsCopiedToastVisible(false);
+      }, 2000);
+    } catch {
+      setAccessError("Could not copy meeting link.");
+    }
+  }
+
   const teacherRemote = remoteParticipants.find((participant) => participant.role === "teacher");
   const studentRemotes = remoteParticipants.filter((participant) => participant.role !== "teacher");
   const latestRaisedHand = raisedHands[raisedHands.length - 1];
@@ -932,7 +953,15 @@ export default function MeetingRoomPage() {
         </div>
       ) : null}
 
-      <p className="meeting-code-corner">{readableMeetingCode || rawMeetingCode}</p>
+      <div className="meeting-code-corner-wrap">
+        {isCopiedToastVisible ? <p className="meeting-code-copy-toast">Copied !</p> : null}
+        <div className="meeting-code-corner" aria-label="Meeting code">
+          <span>{readableMeetingCode || rawMeetingCode}</span>
+          <button type="button" onClick={copyMeetingLink}>
+            <img src="/copy-2-svgrepo-com.svg" alt="Copy meeting link" />
+          </button>
+        </div>
+      </div>
 
       <section className="capture-card room-meeting-card glass-panel" aria-label="Meeting room">
         <div className="room-grid" aria-label="Participants grid">

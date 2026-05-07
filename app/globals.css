@@ -1374,20 +1374,60 @@ h1 {
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
-.meeting-code-corner {
+.meeting-code-corner-wrap {
   position: fixed;
   left: 18px;
   bottom: 18px;
   z-index: 20;
+}
+
+.meeting-code-corner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   padding: 7px 10px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
+  background: rgba(10, 13, 23, 0.58);
+  backdrop-filter: blur(10px);
+}
+
+.meeting-code-corner span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
-  background: rgba(10, 13, 23, 0.58);
-  backdrop-filter: blur(10px);
+}
+
+.meeting-code-corner button {
+  display: grid;
+  place-items: center;
+  min-height: 24px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.meeting-code-corner button img {
+  width: 17px;
+  height: 17px;
+  filter: brightness(0) invert(1);
+}
+
+.meeting-code-copy-toast {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(17, 17, 17, 0.9);
+  white-space: nowrap;
 }
 
 .teacher-top-actions {
