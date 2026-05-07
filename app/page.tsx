@@ -23,7 +23,7 @@ export default function Home() {
           <p className={`home-kicker ${oxygen.className}`} style={{ fontWeight: 700 }}>
             Zero Lag. Full Attention
           </p>
-          <h1 className="home-brand-title meetigate-font">Meetigate</h1>
+          <h1 className="home-brand-title meetigate-font ">Meetigate</h1>
           <p className={`home-copy ${nunito.className}`} style={{ fontWeight: 400 }}>
             We help teachers and students stay connected and learn without interruption.
           </p>
