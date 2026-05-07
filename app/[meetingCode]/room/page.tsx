@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   DisconnectReason,
@@ -135,6 +135,10 @@ function isExpectedDisconnect(reason: DisconnectReason | undefined) {
   return reason === DisconnectReason.CLIENT_INITIATED || reason === DisconnectReason.PARTICIPANT_REMOVED;
 }
 
+function isIgnoredLiveKitDataChannelError(message: string) {
+  return message.includes("Unknown DataChannel error on lossy") || message.includes("Unknown DataChannel error on reliable");
+}
+
 export default function MeetingRoomPage() {
   const params = useParams<{ meetingCode: string }>();
   const router = useRouter();
@@ -142,11 +146,11 @@ export default function MeetingRoomPage() {
   const readableMeetingCode = normalizeMeetingCode(rawMeetingCode) ?? "";
   const lobbyHref = `/${encodeURIComponent(readableMeetingCode)}`;
 
-  const [cameraStatus, setCameraStatus] = useState<CameraStatus>("idle");
+  const [, setCameraStatus] = useState<CameraStatus>("idle");
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [micEnabled, setMicEnabled] = useState(false);
   const [accessError, setAccessError] = useState("");
-  const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
+  const [, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
   const [remoteParticipants, setRemoteParticipants] = useState<RemoteTile[]>([]);
   const [pendingParticipants, setPendingParticipants] = useState<PendingParticipant[]>([]);
   const [raisedHands, setRaisedHands] = useState<ActiveParticipant[]>([]);
@@ -165,6 +169,16 @@ export default function MeetingRoomPage() {
   const hasBeenRemovedRef = useRef(false);
 
   useEffect(() => {
+    const originalConsoleError = console.error;
+    console.error = (...args: Parameters<typeof console.error>) => {
+      const message = typeof args[0] === "string" ? args[0] : "";
+      if (isIgnoredLiveKitDataChannelError(message)) {
+        return;
+      }
+
+      originalConsoleError(...args);
+    };
+
     setLogLevel("warn");
     setLogExtension((level, msg, context) => {
       if (level !== LogLevel.error) {
@@ -172,7 +186,7 @@ export default function MeetingRoomPage() {
       }
 
       const text = String(msg ?? "");
-      if (text.includes("Unknown DataChannel error on lossy") || text.includes("Unknown DataChannel error on reliable")) {
+      if (isIgnoredLiveKitDataChannelError(text)) {
         return;
       }
 
@@ -194,12 +208,10 @@ export default function MeetingRoomPage() {
 
     window.addEventListener("unhandledrejection", handleUnhandledRejection);
     return () => {
+      console.error = originalConsoleError;
       window.removeEventListener("unhandledrejection", handleUnhandledRejection);
     };
   }, []);
-
-  const isConnected = connectionState === ConnectionState.Connected;
-  const remoteCount = useMemo(() => remoteParticipants.length, [remoteParticipants]);
 
   function mapParticipant(participant: RemoteParticipant): RemoteTile {
     const videoPub = [...participant.trackPublications.values()].find(
@@ -836,35 +848,65 @@ export default function MeetingRoomPage() {
 
   return (
     <main className="entry-shell room-shell">
-      {selfRole === "teacher" && pendingParticipants.length > 0 ? (
-        <div className="join-request-notifications">
-          <button className="join-request-bell" type="button" aria-label={`Pending join requests: ${pendingParticipants.length}`}>
-            <svg aria-hidden="true" viewBox="0 0 24 24">
-              <path d="M18 9.8c0-3.2-2.1-5.8-5-6.5V2h-2v1.3c-2.9.7-5 3.3-5 6.5V14l-1.8 3v1h15.6v-1L18 14V9.8Z" />
-              <path d="M9.8 20a2.2 2.2 0 0 0 4.4 0h-4.4Z" />
-            </svg>
-            <span>{pendingParticipants.length}</span>
-          </button>
-          <div className="join-request-tile" role="menu" aria-label="Pending join requests">
-            {pendingParticipants.map((participant) => (
-              <div key={participant.id} className="join-request-row">
-                <span>{participant.displayName}</span>
-                <div className="join-request-actions">
-                  <button type="button" onClick={() => resolvePending(participant.id, "admit")}>
-                    Approve
-                  </button>
-                  <button type="button" onClick={() => resolvePending(participant.id, "reject")}>
-                    Decline
-                  </button>
-                </div>
+      {selfRole === "teacher" ? (
+        <div className="teacher-top-actions">
+          {pendingParticipants.length > 0 ? (
+            <div className="join-request-notifications">
+              <button className="join-request-bell" type="button" aria-label={`Pending join requests: ${pendingParticipants.length}`}>
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M18 9.8c0-3.2-2.1-5.8-5-6.5V2h-2v1.3c-2.9.7-5 3.3-5 6.5V14l-1.8 3v1h15.6v-1L18 14V9.8Z" />
+                  <path d="M9.8 20a2.2 2.2 0 0 0 4.4 0h-4.4Z" />
+                </svg>
+                <span>{pendingParticipants.length}</span>
+              </button>
+              <div className="join-request-tile" role="menu" aria-label="Pending join requests">
+                {pendingParticipants.map((participant) => (
+                  <div key={participant.id} className="join-request-row">
+                    <span>{participant.displayName}</span>
+                    <div className="join-request-actions">
+                      <button type="button" onClick={() => resolvePending(participant.id, "admit")}>
+                        Approve
+                      </button>
+                      <button type="button" onClick={() => resolvePending(participant.id, "reject")}>
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          ) : null}
+
+          <div className="participants-menu">
+            <button className="participants-button" type="button" aria-label={`Participants: ${activeStudents.length + 1}`}>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M8.5 11.2a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2Zm7 0a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2ZM2.8 20c0-3.3 2.6-6 5.7-6s5.7 2.7 5.7 6v.2H2.8V20Zm11.8.2v-.5a7.5 7.5 0 0 0-1.6-4.6 5.2 5.2 0 0 1 2.5-.6c2.8 0 5.1 2.4 5.1 5.4v.3h-6Z" />
+              </svg>
+              <span>{activeStudents.length + 1}</span>
+            </button>
+            <div className="participants-tile" role="menu" aria-label="Active participants">
+              <div className="participant-menu-row">
+                <span>You</span>
+              </div>
+              {activeStudents.length === 0 ? (
+                <p>No active students yet.</p>
+              ) : (
+                activeStudents.map((participant) => (
+                  <div key={participant.id} className="participant-menu-row">
+                    <span>{participant.displayName}</span>
+                    <button type="button" onClick={() => removeFromRoom(participant.id)}>
+                      Remove
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       ) : null}
 
       {raisedHands.length > 0 ? (
-        <div className={`raised-hand-notifications${selfRole === "teacher" && pendingParticipants.length > 0 ? " with-join-bell" : ""}`}>
+        <div className={`raised-hand-notifications${selfRole === "teacher" ? " with-teacher-actions" : ""}`}>
           <button
             type="button"
             className={`raised-hand-popup-trigger${isRaisedHandsPopupOpen ? " open" : ""}`}
@@ -890,26 +932,10 @@ export default function MeetingRoomPage() {
         </div>
       ) : null}
 
-      <section className="capture-card glass-panel" aria-label="Meeting room">
-        <div className="capture-header">
-          <div>
-            <p className="eyebrow">Meeting room</p>
-            <h2>{readableMeetingCode || rawMeetingCode}</h2>
-          </div>
-          <span className={`capture-status ${isConnected ? "active" : "blocked"}`}>
-            {isConnected ? `Live (${remoteCount + 1})` : cameraStatus === "requesting" ? "Connecting" : "Limited"}
-          </span>
-        </div>
+      <p className="meeting-code-corner">{readableMeetingCode || rawMeetingCode}</p>
 
+      <section className="capture-card room-meeting-card glass-panel" aria-label="Meeting room">
         <div className="room-grid" aria-label="Participants grid">
-          {selfRole === "teacher" && studentRemotes.length === 0 ? (
-            <div className="waiting-room-indicator" title="Waiting Room: No other participants yet" aria-label="Waiting Room: No other participants yet">
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <path d="M12 2a5 5 0 0 1 5 5v2h1.5A2.5 2.5 0 0 1 21 11.5v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 19.5v-8A2.5 2.5 0 0 1 5.5 9H7V7a5 5 0 0 1 5-5Zm0 2.2A2.8 2.8 0 0 0 9.2 7v2h5.6V7A2.8 2.8 0 0 0 12 4.2Z" />
-              </svg>
-            </div>
-          ) : null}
-
           {selfRole === "teacher" ? (
             <article className="participant-card self-tile teacher-tile">
               <p>You</p>
@@ -975,24 +1001,6 @@ export default function MeetingRoomPage() {
 
         {accessError ? <p className="form-error">{accessError}</p> : null}
 
-
-        {selfRole === "teacher" ? (
-          <section aria-label="Active students">
-            <h3>Students in room ({activeStudents.length})</h3>
-            {activeStudents.length === 0 ? (
-              <p>No active students yet.</p>
-            ) : (
-              activeStudents.map((participant) => (
-                <div key={participant.id} className="room-controls">
-                  <span>{participant.displayName}</span>
-                  <button type="button" onClick={() => removeFromRoom(participant.id)}>
-                    Remove from room
-                  </button>
-                </div>
-              ))
-            )}
-          </section>
-        ) : null}
 
         <nav
           className={`meeting-control-nav ${selfRole === "student" ? "student-control-nav" : "teacher-control-nav"}`}
