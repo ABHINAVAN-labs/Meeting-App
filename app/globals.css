@@ -671,9 +671,11 @@ h1 {
 }
 
 .preview-controls {
-  display: grid;
+  
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 50px;
+  display: flex;
+  justify-content: center;
 }
 
 .preview-controls button {
@@ -697,11 +699,11 @@ h1 {
   display: grid;
   place-items: center;
   justify-self: center;
-  width: 58px;
-  min-height: 58px;
+  width: 38px;
+  min-height: 38px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 30%;
 }
 
 .preview-icon-button svg {
@@ -1357,12 +1359,12 @@ h1 {
   grid-auto-columns: 58px;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 0px;
   width: fit-content;
   max-width: 100%;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
+  border-radius: 20px;
   background: rgba(10, 13, 23, 0.72);
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.24);
 }
@@ -1371,7 +1373,15 @@ h1 {
 }
 
 .room-meeting-card {
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+.room-meeting-card > .room-grid {
+  align-content: start;
+  margin-bottom: 14px;
+}
+
+.room-meeting-card > .meeting-control-nav {
+  margin-top: 6px;
 }
 
 .meeting-code-corner-wrap {
@@ -1762,12 +1772,12 @@ h1 {
 }
 
 .teacher-tile {
-  width: min(660px, 100%);
+  width: min(600px, 100%);
 }
 
 .teacher-tile .participant-video,
 .teacher-tile .participant-placeholder {
-  height: 300px;
+  height: 260px;
 }
 
 .student-tile-row {
@@ -1776,15 +1786,16 @@ h1 {
   justify-content: center;
   gap: 10px;
   width: 100%;
+  margin-bottom: 12px;
 }
 
 .student-tile {
-  width: min(320px, 100%);
+  width: min(290px, 100%);
 }
 
 .student-tile .participant-video,
 .student-tile .participant-placeholder {
-  height: 150px;
+  height: 130px;
 }
 
 .participant-video video {
@@ -1829,11 +1840,11 @@ h1 {
   display: grid;
   place-items: center;
   justify-self: center;
-  width: 58px;
-  min-height: 58px;
+  width: 38px;
+  min-height: 38px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 30%;
   color: #ffffff;
   background: #111111;
 }
@@ -1929,7 +1940,7 @@ h1 {
 }
 
 .room-actions button {
-  min-height: 48px;
+  min-height: 38px;
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 14px;
   color: var(--ink);
@@ -1943,11 +1954,11 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 58px;
-  min-height: 58px;
+  width: 38px;
+  min-height: 38px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 30%;
   overflow: hidden;
   color: #ffffff;
   background: #e53935;
@@ -1964,9 +1975,11 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 50%;
-  height: 50%;
+  width: 80%;
+  height: 80%;
 }
+
+
 
 .room-actions .leave-icon-button svg,
 .meeting-control-nav .leave-icon-button svg {
