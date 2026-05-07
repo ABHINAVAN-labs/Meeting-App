@@ -969,8 +969,13 @@ export default function MeetingRoomPage() {
         </div>
       </div>
 
-      <section className="capture-card room-meeting-card glass-panel" aria-label="Meeting room">
-        <div className="room-grid" aria-label="Participants grid">
+      <div className="room-cards-layout">
+        <section className="room-side-chat-card glass-panel" aria-label="AI Chat card">
+          <p>AI Chat</p>
+        </section>
+
+        <section className="capture-card room-meeting-card glass-panel" aria-label="Meeting room">
+          <div className="room-grid" aria-label="Participants grid">
           {selfRole === "teacher" ? (
             <article className="participant-card self-tile teacher-tile">
               <p>You</p>
@@ -1034,13 +1039,13 @@ export default function MeetingRoomPage() {
           </div>
         </div>
 
-        {accessError ? <p className="form-error">{accessError}</p> : null}
+          {accessError ? <p className="form-error">{accessError}</p> : null}
 
 
-        <nav
-          className={`meeting-control-nav ${selfRole === "student" ? "student-control-nav" : "teacher-control-nav"}`}
-          aria-label="Meeting controls"
-        >
+          <nav
+            className={`meeting-control-nav ${selfRole === "student" ? "student-control-nav" : "teacher-control-nav"}`}
+            aria-label="Meeting controls"
+          >
           <button
             aria-label={cameraEnabled ? "Camera on" : "Camera off"}
             className={`room-icon-button camera-icon-button ${cameraEnabled ? "camera-on" : "camera-off"}`}
@@ -1103,8 +1108,13 @@ export default function MeetingRoomPage() {
               </svg>
             </span>
           </button>
-        </nav>
-      </section>
+          </nav>
+        </section>
+
+        <section className="room-side-chat-card glass-panel" aria-label="Meeting Chat card">
+          <p>Meeting Chat</p>
+        </section>
+      </div>
     </main>
   );
 }
