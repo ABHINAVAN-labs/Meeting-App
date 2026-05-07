@@ -975,11 +975,6 @@ export default function MeetingRoomPage() {
 
         {accessError ? <p className="form-error">{accessError}</p> : null}
 
-        <div className="room-actions">
-          <Link className="ghost-action" href={lobbyHref}>
-            Back to Lobby
-          </Link>
-        </div>
 
         {selfRole === "teacher" ? (
           <section aria-label="Active students">
