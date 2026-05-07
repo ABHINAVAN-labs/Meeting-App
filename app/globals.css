@@ -1348,6 +1348,24 @@ h1 {
   text-align: center;
   text-decoration: none;
 }
+
+.meeting-control-nav {
+  align-self: end;
+  justify-self: center;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 58px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(10, 13, 23, 0.72);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.24);
+}
 .room-shell .capture-card {
   width: min(960px, 100%);
 }
@@ -1643,7 +1661,8 @@ h1 {
   box-shadow: 0 12px 28px rgba(255, 180, 91, 0.18);
 }
 
-.room-controls button.room-icon-button {
+.room-controls button.room-icon-button,
+.meeting-control-nav button.room-icon-button {
   display: grid;
   place-items: center;
   justify-self: center;
@@ -1656,28 +1675,33 @@ h1 {
   background: #111111;
 }
 
-.room-controls button.room-icon-button.active {
+.room-controls button.room-icon-button.active,
+.meeting-control-nav button.room-icon-button.active {
   color: #ffffff;
   background: #111111;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
-.room-controls button.room-icon-button.muted {
+.room-controls button.room-icon-button.muted,
+.meeting-control-nav button.room-icon-button.muted {
   color: #111111;
   background: #ffffff;
 }
 
-.room-controls button.mic-icon-button.mic-on {
+.room-controls button.mic-icon-button.mic-on,
+.meeting-control-nav button.mic-icon-button.mic-on {
   color: #ffffff;
   background: #111111;
 }
 
-.room-controls button.mic-icon-button.mic-off {
+.room-controls button.mic-icon-button.mic-off,
+.meeting-control-nav button.mic-icon-button.mic-off {
   color: #111111;
   background: #ffffff;
 }
 
 .room-controls button.camera-icon-button.camera-on,
+.meeting-control-nav button.camera-icon-button.camera-on,
 .preview-controls button.camera-icon-button.camera-on,
 .preview-controls button.mic-icon-button.mic-on {
   color: #ffffff;
@@ -1685,18 +1709,26 @@ h1 {
 }
 
 .room-controls button.camera-icon-button.camera-off,
+.meeting-control-nav button.camera-icon-button.camera-off,
 .preview-controls button.camera-icon-button.camera-off,
 .preview-controls button.mic-icon-button.mic-off {
   color: #111111;
   background: #ffffff;
 }
 
-.room-controls button.hand-icon-button.hand-on {
+.room-controls button.hand-icon-button.hand-on,
+.meeting-control-nav button.hand-icon-button.hand-on {
   color: #ffffff;
   background: #111111;
 }
 
-.room-controls button.hand-icon-button.hand-off {
+.room-controls button.hand-icon-button.hand-on img,
+.meeting-control-nav button.hand-icon-button.hand-on img {
+  filter: brightness(0) invert(84%);
+}
+
+.room-controls button.hand-icon-button.hand-off,
+.meeting-control-nav button.hand-icon-button.hand-off {
   color: #111111;
   background: #ffffff;
 }
@@ -1712,7 +1744,8 @@ h1 {
   height: 30px;
 }
 
-.room-controls button:hover {
+.room-controls button:hover,
+.meeting-control-nav button:hover {
   transform: translateY(-2px);
 }
 
@@ -1742,7 +1775,8 @@ h1 {
   background: rgba(255, 255, 255, 0.12);
 }
 
-.room-actions button.room-icon-button.leave-icon-button {
+.room-actions button.room-icon-button.leave-icon-button,
+.meeting-control-nav button.room-icon-button.leave-icon-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1756,12 +1790,14 @@ h1 {
   background: #e53935;
 }
 
-.room-actions button.room-icon-button.leave-icon-button:hover {
+.room-actions button.room-icon-button.leave-icon-button:hover,
+.meeting-control-nav button.room-icon-button.leave-icon-button:hover {
   transform: translateY(-2px);
   background: #d32f2f;
 }
 
-.room-actions .leave-icon-button .leave-icon-inner {
+.room-actions .leave-icon-button .leave-icon-inner,
+.meeting-control-nav .leave-icon-button .leave-icon-inner {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1769,7 +1805,8 @@ h1 {
   height: 50%;
 }
 
-.room-actions .leave-icon-button svg {
+.room-actions .leave-icon-button svg,
+.meeting-control-nav .leave-icon-button svg {
   display: block;
   width: 100%;
   height: 100%;

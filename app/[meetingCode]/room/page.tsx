@@ -151,7 +151,7 @@ export default function MeetingRoomPage() {
   const [pendingParticipants, setPendingParticipants] = useState<PendingParticipant[]>([]);
   const [raisedHands, setRaisedHands] = useState<ActiveParticipant[]>([]);
   const [activeStudents, setActiveStudents] = useState<ActiveParticipant[]>([]);
-  const [selfRole, setSelfRole] = useState<ParticipantRole>("student");
+  const [selfRole, setSelfRole] = useState<ParticipantRole | null>(null);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isRaisedHandsPopupOpen, setIsRaisedHandsPopupOpen] = useState(false);
 
@@ -784,6 +784,10 @@ export default function MeetingRoomPage() {
   }
 
   async function toggleRaiseHand() {
+    if (selfRole !== "student") {
+      return;
+    }
+
     const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
     const next = !isHandRaised;
     const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/hand`, {
@@ -971,18 +975,34 @@ export default function MeetingRoomPage() {
 
         {accessError ? <p className="form-error">{accessError}</p> : null}
 
-        <div className="room-controls">
-          {selfRole === "student" ? (
-            <button
-              aria-label={isHandRaised ? "Lower hand" : "Raise hand"}
-              className={`room-icon-button hand-icon-button ${isHandRaised ? "hand-on" : "hand-off"}`}
-              title={isHandRaised ? "Lower hand" : "Raise hand"}
-              type="button"
-              onClick={toggleRaiseHand}
-            >
-              <img alt="" aria-hidden="true" src="/hand-back-right.svg" />
-            </button>
-          ) : null}
+        <div className="room-actions">
+          <Link className="ghost-action" href={lobbyHref}>
+            Back to Lobby
+          </Link>
+        </div>
+
+        {selfRole === "teacher" ? (
+          <section aria-label="Active students">
+            <h3>Students in room ({activeStudents.length})</h3>
+            {activeStudents.length === 0 ? (
+              <p>No active students yet.</p>
+            ) : (
+              activeStudents.map((participant) => (
+                <div key={participant.id} className="room-controls">
+                  <span>{participant.displayName}</span>
+                  <button type="button" onClick={() => removeFromRoom(participant.id)}>
+                    Remove from room
+                  </button>
+                </div>
+              ))
+            )}
+          </section>
+        ) : null}
+
+        <nav
+          className={`meeting-control-nav ${selfRole === "student" ? "student-control-nav" : "teacher-control-nav"}`}
+          aria-label="Meeting controls"
+        >
           <button
             aria-label={cameraEnabled ? "Camera on" : "Camera off"}
             className={`room-icon-button camera-icon-button ${cameraEnabled ? "camera-on" : "camera-off"}`}
@@ -1011,12 +1031,17 @@ export default function MeetingRoomPage() {
               {!micEnabled ? <path d="M5 5l14 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" /> : null}
             </svg>
           </button>
-        </div>
-
-        <div className="room-actions">
-          <Link className="ghost-action" href={lobbyHref}>
-            Back to Lobby
-          </Link>
+          {selfRole === "student" ? (
+            <button
+              aria-label={isHandRaised ? "Lower hand" : "Raise hand"}
+              className={`room-icon-button hand-icon-button ${isHandRaised ? "hand-on" : "hand-off"}`}
+              title={isHandRaised ? "Lower hand" : "Raise hand"}
+              type="button"
+              onClick={toggleRaiseHand}
+            >
+              <img alt="" aria-hidden="true" src="/hand-back-right.svg" />
+            </button>
+          ) : null}
           <button
             aria-label="Leave meeting"
             className="room-icon-button leave-icon-button"
@@ -1040,25 +1065,7 @@ export default function MeetingRoomPage() {
               </svg>
             </span>
           </button>
-        </div>
-
-        {selfRole === "teacher" ? (
-          <section aria-label="Active students">
-            <h3>Students in room ({activeStudents.length})</h3>
-            {activeStudents.length === 0 ? (
-              <p>No active students yet.</p>
-            ) : (
-              activeStudents.map((participant) => (
-                <div key={participant.id} className="room-controls">
-                  <span>{participant.displayName}</span>
-                  <button type="button" onClick={() => removeFromRoom(participant.id)}>
-                    Remove from room
-                  </button>
-                </div>
-              ))
-            )}
-          </section>
-        ) : null}
+        </nav>
       </section>
     </main>
   );
