@@ -159,6 +159,7 @@ export default function MeetingRoomPage() {
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isRaisedHandsPopupOpen, setIsRaisedHandsPopupOpen] = useState(false);
   const [isCopiedToastVisible, setIsCopiedToastVisible] = useState(false);
+  const [clockNow, setClockNow] = useState(() => new Date());
 
   const participantIdRef = useRef("");
   const copyToastTimeoutRef = useRef<number | null>(null);
@@ -213,6 +214,16 @@ export default function MeetingRoomPage() {
     return () => {
       console.error = originalConsoleError;
       window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setClockNow(new Date());
+    }, 30000);
+
+    return () => {
+      window.clearInterval(timer);
     };
   }, []);
 
@@ -872,9 +883,29 @@ export default function MeetingRoomPage() {
   const studentRemotes = remoteParticipants.filter((participant) => participant.role !== "teacher");
   const latestRaisedHand = raisedHands[raisedHands.length - 1];
   const additionalRaisedHandsCount = Math.max(0, raisedHands.length - 1);
+  const clockLabel = `${clockNow.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${clockNow.toLocaleDateString([], { weekday: "short" })}`;
 
   return (
     <main className="entry-shell room-shell">
+      <div
+        aria-label="Current time and day"
+        style={{
+          position: "fixed",
+          top: "14px",
+          left: "14px",
+          zIndex: 70,
+          padding: "6px 10px",
+          borderRadius: "10px",
+          border: "1px solid rgba(255,255,255,0.16)",
+          background: "rgba(8,12,22,0.55)",
+          color: "#f7fafc",
+          fontSize: "0.82rem",
+          fontWeight: 600,
+          letterSpacing: "0.01em"
+        }}
+      >
+        {clockLabel}
+      </div>
       {selfRole === "teacher" ? (
         <div className="teacher-top-actions">
           {pendingParticipants.length > 0 ? (
