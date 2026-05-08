@@ -45,6 +45,70 @@ type ActiveParticipant = {
   handRaised: boolean;
   handRaisedAt: number | null;
 };
+type AiChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
+function cleanAiDisplayText(content: string) {
+  return content
+    .replace(/\r/g, "")
+    .replace(/`/g, "")
+    .replace(/\*\*/g, "")
+    .replace(/^\s{0,3}#{1,6}\s*/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "- ")
+    .replace(/^\s*\d+\.\s+/gm, (match) => match.trimStart())
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, "$1$2")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function looksStructured(content: string) {
+  const lines = content.split("\n");
+  const pipeLines = lines.filter((line) => line.includes("|")).length;
+  return content.includes("```") || pipeLines >= 2;
+}
+
+function cleanStructuredText(content: string) {
+  return content.replace(/\r/g, "").replace(/```[a-zA-Z0-9_-]*\n?/g, "").trim();
+}
+
+type AssistantPart =
+  | { type: "text"; content: string }
+  | { type: "code"; content: string };
+
+function splitAssistantContent(content: string): AssistantPart[] {
+  const normalized = content.replace(/\r/g, "");
+  const regex = /```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g;
+  const parts: AssistantPart[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(normalized)) !== null) {
+    const before = normalized.slice(lastIndex, match.index).trim();
+    if (before) {
+      parts.push({ type: "text", content: cleanAiDisplayText(before) });
+    }
+
+    const code = (match[1] ?? "").trim();
+    if (code) {
+      parts.push({ type: "code", content: code });
+    }
+    lastIndex = regex.lastIndex;
+  }
+
+  const trailing = normalized.slice(lastIndex).trim();
+  if (trailing) {
+    parts.push({ type: "text", content: cleanAiDisplayText(trailing) });
+  }
+
+  if (parts.length === 0) {
+    return [{ type: "text", content: cleanAiDisplayText(normalized) }];
+  }
+
+  return parts;
+}
 
 const SESSION_STORAGE_PREFIX = "meeting_participant_session_";
 const PREFS_STORAGE_PREFIX = "meeting_media_prefs_";
@@ -160,6 +224,10 @@ export default function MeetingRoomPage() {
   const [isRaisedHandsPopupOpen, setIsRaisedHandsPopupOpen] = useState(false);
   const [isCopiedToastVisible, setIsCopiedToastVisible] = useState(false);
   const [clockNow, setClockNow] = useState(() => new Date());
+  const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiSending, setAiSending] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   const participantIdRef = useRef("");
   const copyToastTimeoutRef = useRef<number | null>(null);
@@ -171,6 +239,7 @@ export default function MeetingRoomPage() {
   const fallbackParticipantsRef = useRef<Map<string, ActiveParticipant>>(new Map());
   const removedParticipantIdsRef = useRef<Set<string>>(new Set());
   const hasBeenRemovedRef = useRef(false);
+  const aiMessagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -216,6 +285,62 @@ export default function MeetingRoomPage() {
       window.removeEventListener("unhandledrejection", handleUnhandledRejection);
     };
   }, []);
+
+  useEffect(() => {
+    aiMessagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [aiMessages, aiSending]);
+
+  async function sendAiMessage() {
+    const userText = aiInput.trim();
+    if (!userText || aiSending) {
+      return;
+    }
+
+    const userMessage: AiChatMessage = {
+      id: `${Date.now()}-user`,
+      role: "user",
+      content: userText
+    };
+
+    const nextMessages = [...aiMessages, userMessage];
+    setAiMessages(nextMessages);
+    setAiInput("");
+    setAiSending(true);
+    setAiError("");
+
+    try {
+      const response = await fetch("/api/ai-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          messages: nextMessages.map((message) => ({
+            role: message.role,
+            content: message.content
+          }))
+        })
+      });
+
+      const data = (await response.json()) as { reply?: string; error?: string; details?: string };
+
+      if (!response.ok || !data.reply) {
+        const detailText = data.details ? ` ${data.details}` : "";
+        throw new Error((data.error ?? "Failed to get AI response.") + detailText);
+      }
+
+      const assistantMessage: AiChatMessage = {
+        id: `${Date.now()}-assistant`,
+        role: "assistant",
+        content: data.reply
+      };
+      setAiMessages((current) => [...current, assistantMessage]);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "Failed to get AI response.");
+    } finally {
+      setAiSending(false);
+    }
+  }
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1001,8 +1126,63 @@ export default function MeetingRoomPage() {
       </div>
 
       <div className="room-cards-layout">
-        <section className="room-side-chat-card glass-panel" aria-label="AI Chat card">
-          <p>AI Chat</p>
+        <section className="room-side-chat-card room-ai-chat-card glass-panel" aria-label="AI Chat card">
+          <div className="room-ai-chat">
+            <p>AI Chat</p>
+            <div className="room-ai-chat-thread" aria-live="polite">
+              {aiMessages.length === 0 ? <span className="room-ai-chat-empty">Ask anything about the class.</span> : null}
+              {aiMessages.map((message) => (
+                <article
+                  key={message.id}
+                  className={`room-ai-chat-message ${message.role}${message.role === "assistant" && looksStructured(message.content) ? " structured" : ""}`}
+                >
+                  <strong>{message.role === "user" ? "You" : "AI"}</strong>
+                  {message.role === "assistant" && looksStructured(message.content) ? (
+                    splitAssistantContent(message.content).map((part, index) =>
+                      part.type === "code" ? (
+                        <div key={`${message.id}-code-${index}`} className="room-ai-chat-code-wrap">
+                          <div className="room-ai-chat-code-head">💻 Pseudocode</div>
+                          <div className="room-ai-chat-code-card">
+                            <pre>{part.content}</pre>
+                          </div>
+                        </div>
+                      ) : (
+                        <p key={`${message.id}-text-${index}`}>{part.content}</p>
+                      )
+                    )
+                  ) : (
+                    <p>{message.role === "assistant" ? cleanAiDisplayText(message.content) : message.content}</p>
+                  )}
+                </article>
+              ))}
+              {aiSending ? (
+                <article className="room-ai-chat-message assistant">
+                  <strong>AI</strong>
+                  <p>Thinking...</p>
+                </article>
+              ) : null}
+              <div ref={aiMessagesEndRef} />
+            </div>
+            {aiError ? <span className="room-ai-chat-error">{aiError}</span> : null}
+            <form
+              className="room-ai-chat-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void sendAiMessage();
+              }}
+            >
+              <input
+                type="text"
+                value={aiInput}
+                onChange={(event) => setAiInput(event.target.value)}
+                placeholder="Type your message..."
+                aria-label="Type a message for AI chat"
+              />
+              <button type="submit" disabled={aiSending || aiInput.trim().length === 0}>
+                Send
+              </button>
+            </form>
+          </div>
         </section>
 
         <section className="capture-card room-meeting-card glass-panel" aria-label="Meeting room">
