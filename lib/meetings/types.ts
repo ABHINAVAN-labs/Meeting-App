@@ -12,9 +12,19 @@ export type Participant = {
   lastSeenAt: number;
 };
 
+export type MeetingChatMessage = {
+  id: string;
+  participantId: string;
+  displayName: string;
+  role: ParticipantRole;
+  content: string;
+  sentAt: number;
+};
+
 export type Room = {
   meetingCode: string;
   participants: Map<string, Participant>;
+  chatMessages: MeetingChatMessage[];
 };
 
 export type MeetingEvent =

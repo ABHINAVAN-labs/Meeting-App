@@ -1,14 +1,15 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME } from "../../../../../lib/meetings/constants";
-import { listRoomParticipants, listVisibleMeetingChatMessages } from "../../../../../lib/meetings/service";
+import { sendMeetingChatMessage } from "../../../../../lib/meetings/service";
 import { parseSessionCookie } from "../../../../../lib/meetings/session";
 import { normalizeMeetingCode } from "../../../../../lib/meetings/validation";
 
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ meetingCode: string }> }
-) {
+type ChatPayload = {
+  content: string;
+};
+
+export async function POST(request: Request, context: { params: Promise<{ meetingCode: string }> }) {
   const { meetingCode } = await context.params;
   const normalizedCode = normalizeMeetingCode(meetingCode);
 
@@ -18,23 +19,18 @@ export async function GET(
 
   const cookieStore = await cookies();
   const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
-
   const headerParticipantId = request.headers.get("x-participant-id")?.trim() ?? "";
   const participantId = headerParticipantId || (session?.meetingCode === normalizedCode ? session.participantId : "");
-
   if (!participantId) {
-    return NextResponse.json({ message: "Join this meeting from lobby first." }, { status: 403 });
+    return NextResponse.json({ message: "Unauthorized for this meeting." }, { status: 403 });
   }
 
-  const participants = listRoomParticipants(normalizedCode, participantId);
-  const sessionParticipant = participants.find((participant) => participant.id === participantId) ?? null;
-  const pendingParticipants = participants.filter((participant) => participant.status === "pending");
+  const payload = (await request.json()) as Partial<ChatPayload>;
+  const result = sendMeetingChatMessage(normalizedCode, participantId, payload.content ?? "");
 
-  return NextResponse.json({
-    participants,
-    pendingParticipants,
-    sessionParticipant,
-    meetingChatMessages: listVisibleMeetingChatMessages(normalizedCode, participantId),
-    sessionParticipantId: participantId
-  });
+  if (!result.ok) {
+    return NextResponse.json({ message: result.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ message: result.message });
 }

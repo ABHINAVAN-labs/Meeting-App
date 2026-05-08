@@ -1,4 +1,4 @@
-import type { MeetingEvent, Participant, Room } from "./types";
+import type { MeetingChatMessage, MeetingEvent, Participant, Room } from "./types";
 
 const rooms = new Map<string, Room>();
 const roomSubscribers = new Map<string, Set<(event: MeetingEvent) => void>>();
@@ -26,7 +26,8 @@ function getOrCreateRoom(meetingCode: string): Room {
 
   const created: Room = {
     meetingCode,
-    participants: new Map<string, Participant>()
+    participants: new Map<string, Participant>(),
+    chatMessages: []
   };
   rooms.set(meetingCode, created);
   return created;
@@ -80,6 +81,23 @@ export function getParticipants(meetingCode: string): Participant[] {
       return normalized;
     })
     .sort((a, b) => a.joinedAt - b.joinedAt);
+}
+
+export function addMeetingChatMessage(meetingCode: string, message: MeetingChatMessage): MeetingChatMessage {
+  const room = getOrCreateRoom(meetingCode);
+  room.chatMessages ??= [];
+  room.chatMessages.push(message);
+  return message;
+}
+
+export function getMeetingChatMessages(meetingCode: string): MeetingChatMessage[] {
+  const room = rooms.get(meetingCode);
+  if (!room) {
+    return [];
+  }
+
+  room.chatMessages ??= [];
+  return room.chatMessages;
 }
 
 export function removeParticipant(meetingCode: string, participantId: string): void {
