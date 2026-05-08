@@ -50,6 +50,14 @@ type AiChatMessage = {
   role: "user" | "assistant";
   content: string;
 };
+type MeetingChatMessage = {
+  id: string;
+  participantId: string;
+  displayName: string;
+  role: ParticipantRole;
+  content: string;
+  sentAt: number;
+};
 
 function cleanAiDisplayText(content: string) {
   return content
@@ -228,18 +236,27 @@ export default function MeetingRoomPage() {
   const [aiInput, setAiInput] = useState("");
   const [aiSending, setAiSending] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [meetingChatMessages, setMeetingChatMessages] = useState<MeetingChatMessage[]>([]);
+  const [meetingChatInput, setMeetingChatInput] = useState("");
+  const [meetingChatSending, setMeetingChatSending] = useState(false);
+  const [meetingChatError, setMeetingChatError] = useState("");
 
   const participantIdRef = useRef("");
+  const selfRoleRef = useRef<ParticipantRole | null>(null);
+  const connectAttemptRef = useRef(0);
   const copyToastTimeoutRef = useRef<number | null>(null);
   const isLeavingRef = useRef(false);
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const localPreviewStreamRef = useRef<MediaStream | null>(null);
+  const cameraEnabledRef = useRef(false);
+  const micEnabledRef = useRef(false);
   const fallbackPeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const fallbackParticipantsRef = useRef<Map<string, ActiveParticipant>>(new Map());
   const removedParticipantIdsRef = useRef<Set<string>>(new Set());
   const hasBeenRemovedRef = useRef(false);
   const aiMessagesEndRef = useRef<HTMLDivElement | null>(null);
+  const meetingChatEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -289,6 +306,46 @@ export default function MeetingRoomPage() {
   useEffect(() => {
     aiMessagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [aiMessages, aiSending]);
+
+  useEffect(() => {
+    meetingChatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [meetingChatMessages]);
+
+  async function sendMeetingChatMessage() {
+    const content = meetingChatInput.trim();
+    if (!content || meetingChatSending) {
+      return;
+    }
+
+    setMeetingChatSending(true);
+    setMeetingChatError("");
+
+    try {
+      const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(participantIdRef.current ? { "x-participant-id": participantIdRef.current } : {})
+        },
+        body: JSON.stringify({ content })
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        message?: MeetingChatMessage | string;
+      };
+
+      if (!response.ok || typeof payload.message === "string" || !payload.message) {
+        throw new Error(typeof payload.message === "string" ? payload.message : "Could not send message.");
+      }
+
+      setMeetingChatMessages((current) => [...current, payload.message as MeetingChatMessage]);
+      setMeetingChatInput("");
+    } catch (error) {
+      setMeetingChatError(error instanceof Error ? error.message : "Could not send message.");
+    } finally {
+      setMeetingChatSending(false);
+    }
+  }
 
   async function sendAiMessage() {
     const userText = aiInput.trim();
@@ -405,6 +462,20 @@ export default function MeetingRoomPage() {
     return Boolean(publication?.track && !publication.isMuted);
   }
 
+  function updateMediaPrefs(nextCameraEnabled = cameraEnabledRef.current, nextMicEnabled = micEnabledRef.current) {
+    cameraEnabledRef.current = nextCameraEnabled;
+    micEnabledRef.current = nextMicEnabled;
+    if (readableMeetingCode) {
+      sessionStorage.setItem(
+        prefsKey(readableMeetingCode),
+        JSON.stringify({
+          cameraEnabled: nextCameraEnabled,
+          micEnabled: nextMicEnabled
+        })
+      );
+    }
+  }
+
   async function sendFallbackSignal(
     toParticipantId: string,
     signalType: "offer" | "answer" | "ice-candidate",
@@ -417,8 +488,46 @@ export default function MeetingRoomPage() {
     }).catch(() => undefined);
   }
 
-  function addLocalTracksToFallbackPeer(peer: RTCPeerConnection) {
-    const stream = localPreviewStreamRef.current;
+  function getLocalRoomTrack(kind: Track.Kind) {
+    const room = roomRef.current;
+    if (!room) {
+      return null;
+    }
+
+    const publication = [...room.localParticipant.trackPublications.values()].find(
+      (pub) => pub.kind === kind
+    ) as LocalTrackPublication | undefined;
+
+    return (
+      (publication?.track as unknown as { mediaStreamTrack?: MediaStreamTrack } | undefined)?.mediaStreamTrack ??
+      null
+    );
+  }
+
+  function syncLocalTracksToFallbackPeer(peer: RTCPeerConnection, nextCameraEnabled = cameraEnabled, nextMicEnabled = micEnabled) {
+    const roomVideoTrack = nextCameraEnabled ? getLocalRoomTrack(Track.Kind.Video) : null;
+    const roomAudioTrack = nextMicEnabled ? getLocalRoomTrack(Track.Kind.Audio) : null;
+    const previewStream = localPreviewStreamRef.current;
+    const videoTrack = roomVideoTrack ?? (nextCameraEnabled ? previewStream?.getVideoTracks()[0] : null);
+    const audioTrack = roomAudioTrack ?? (nextMicEnabled ? previewStream?.getAudioTracks()[0] : null);
+    const stream = new MediaStream([videoTrack, audioTrack].filter(Boolean) as MediaStreamTrack[]);
+
+    for (const sender of peer.getSenders()) {
+      if (sender.track?.kind === "video" && sender.track !== videoTrack) {
+        peer.removeTrack(sender);
+      }
+      if (sender.track?.kind === "audio" && sender.track !== audioTrack) {
+        peer.removeTrack(sender);
+      }
+    }
+
+    if (videoTrack) {
+      videoTrack.enabled = nextCameraEnabled;
+    }
+    if (audioTrack) {
+      audioTrack.enabled = nextMicEnabled;
+    }
+
     if (!stream) {
       return;
     }
@@ -439,7 +548,7 @@ export default function MeetingRoomPage() {
     fallbackParticipantsRef.current.set(participant.id, participant);
     const existing = fallbackPeersRef.current.get(participant.id);
     if (existing) {
-      addLocalTracksToFallbackPeer(existing);
+      syncLocalTracksToFallbackPeer(existing);
       return existing;
     }
 
@@ -447,7 +556,7 @@ export default function MeetingRoomPage() {
     fallbackPeersRef.current.set(participant.id, peer);
     peer.addTransceiver("video", { direction: "recvonly" });
     peer.addTransceiver("audio", { direction: "recvonly" });
-    addLocalTracksToFallbackPeer(peer);
+    syncLocalTracksToFallbackPeer(peer);
 
     peer.onicecandidate = (event) => {
       if (event.candidate) {
@@ -476,7 +585,8 @@ export default function MeetingRoomPage() {
     };
 
     peer.onnegotiationneeded = async () => {
-      if (!participantIdRef.current || participantIdRef.current > participant.id) {
+      const isConnectedPeer = peer.connectionState === "connected" || peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed";
+      if (!participantIdRef.current || (!isConnectedPeer && participantIdRef.current > participant.id) || peer.signalingState !== "stable") {
         return;
       }
 
@@ -531,6 +641,8 @@ export default function MeetingRoomPage() {
       return;
     }
 
+    isLeavingRef.current = false;
+    const connectAttempt = ++connectAttemptRef.current;
     setCameraStatus("requesting");
 
     let desiredCamera = false;
@@ -541,6 +653,8 @@ export default function MeetingRoomPage() {
         const parsed = JSON.parse(rawPrefs) as { cameraEnabled?: boolean; micEnabled?: boolean };
         desiredCamera = Boolean(parsed.cameraEnabled);
         desiredMic = Boolean(parsed.micEnabled);
+        cameraEnabledRef.current = desiredCamera;
+        micEnabledRef.current = desiredMic;
       }
     } catch {
       desiredCamera = false;
@@ -565,10 +679,18 @@ export default function MeetingRoomPage() {
       return;
     }
 
-    const payload = (await tokenResponse.json()) as { token?: unknown; url?: unknown };
+    const payload = (await tokenResponse.json()) as { token?: unknown; url?: unknown; participantId?: unknown; role?: unknown };
 
     const token = typeof payload.token === "string" ? payload.token : "";
     const url = typeof payload.url === "string" ? payload.url : "";
+    if (typeof payload.participantId === "string") {
+      participantIdRef.current = payload.participantId;
+      sessionStorage.setItem(sessionKey(readableMeetingCode), payload.participantId);
+    }
+    if (payload.role === "teacher" || payload.role === "student") {
+      selfRoleRef.current = payload.role;
+      setSelfRole(payload.role);
+    }
 
     if (!url.startsWith("wss://") && !url.startsWith("ws://")) {
       setAccessError("LiveKit URL must start with wss:// (or ws:// for local dev).");
@@ -590,7 +712,7 @@ export default function MeetingRoomPage() {
       })
       .on(RoomEvent.Disconnected, (reason) => {
         if (!isLeavingRef.current && !isExpectedDisconnect(reason)) {
-          console.error("LiveKit disconnected", {
+          console.warn("LiveKit disconnected", {
             reason,
             url,
             online: navigator.onLine
@@ -614,42 +736,50 @@ export default function MeetingRoomPage() {
       await room.connect(url, token);
       await room.startAudio();
 
-      let cameraOn = false;
-      let micOn = false;
+      let cameraOn = cameraEnabledRef.current;
+      let micOn = micEnabledRef.current;
 
       try {
-        if (desiredCamera && !hasActiveLocalTrack(room, Track.Kind.Video)) {
+        if (cameraOn && !hasActiveLocalTrack(room, Track.Kind.Video)) {
           await room.localParticipant.setCameraEnabled(true);
         }
-        if (!desiredCamera && hasActiveLocalTrack(room, Track.Kind.Video)) {
+        if (!cameraOn && hasActiveLocalTrack(room, Track.Kind.Video)) {
           await room.localParticipant.setCameraEnabled(false);
         }
         await attachLocalVideo(room);
-        cameraOn = desiredCamera;
       } catch (error) {
         const details = formatUnknownError(error);
         if (!details.message.includes("Cancelled publication by calling unpublish")) {
           console.error("LiveKit camera enable error", details);
         }
+        if (cameraOn) {
+          cameraOn = await startLocalPreviewCamera();
+        }
       }
 
       try {
-        if (desiredMic && !hasActiveLocalTrack(room, Track.Kind.Audio)) {
+        if (micOn && !hasActiveLocalTrack(room, Track.Kind.Audio)) {
           await room.localParticipant.setMicrophoneEnabled(true);
         }
-        if (!desiredMic && hasActiveLocalTrack(room, Track.Kind.Audio)) {
+        if (!micOn && hasActiveLocalTrack(room, Track.Kind.Audio)) {
           await room.localParticipant.setMicrophoneEnabled(false);
         }
-        micOn = desiredMic;
       } catch (error) {
         const details = formatUnknownError(error);
         if (!details.message.includes("Cancelled publication by calling unpublish")) {
           console.error("LiveKit microphone enable error", details);
         }
+        if (micOn) {
+          micOn = await startLocalPreviewMic();
+        }
       }
 
+      updateMediaPrefs(cameraOn, micOn);
       setCameraEnabled(cameraOn);
       setMicEnabled(micOn);
+      for (const peer of fallbackPeersRef.current.values()) {
+        syncLocalTracksToFallbackPeer(peer, cameraOn, micOn);
+      }
       setCameraStatus("active");
       if (!cameraOn && !micOn) {
         setAccessError("Connected, but no camera/mic device found. You can still stay in the room.");
@@ -663,6 +793,14 @@ export default function MeetingRoomPage() {
       refreshRemoteParticipants(room);
     } catch (error) {
       const details = formatUnknownError(error);
+      const wasAborted = details.message.includes("Abort handler called");
+      if (wasAborted || isLeavingRef.current || connectAttempt !== connectAttemptRef.current) {
+        if (roomRef.current === room) {
+          roomRef.current = null;
+        }
+        return;
+      }
+
       console.error("LiveKit connect error", {
         ...details,
         url,
@@ -681,6 +819,7 @@ export default function MeetingRoomPage() {
 
   async function leaveMeeting() {
     isLeavingRef.current = true;
+    connectAttemptRef.current += 1;
 
     if (readableMeetingCode) {
       if (!participantIdRef.current) {
@@ -701,12 +840,14 @@ export default function MeetingRoomPage() {
     roomRef.current?.disconnect();
     roomRef.current = null;
     stopLocalPreviewCamera();
+    stopLocalPreviewMic();
   }
 
   async function toggleCamera() {
     const room = roomRef.current;
     const next = !cameraEnabled;
 
+    updateMediaPrefs(next, micEnabled);
     if (!room) {
       if (next) {
         setCameraEnabled(await startLocalPreviewCamera());
@@ -717,32 +858,57 @@ export default function MeetingRoomPage() {
       return;
     }
 
-    await room.localParticipant.setCameraEnabled(next);
-    setCameraEnabled(next);
-    await attachLocalVideo(room);
+    let cameraOn = next;
+    try {
+      await room.localParticipant.setCameraEnabled(next);
+      await attachLocalVideo(room);
+    } catch (error) {
+      if (next) {
+        cameraOn = await startLocalPreviewCamera();
+      } else {
+        stopLocalPreviewCamera();
+      }
+      const details = formatUnknownError(error);
+      if (!details.message.includes("Abort handler called")) {
+        setAccessError(`Camera unavailable: ${details.message}`);
+      }
+    }
+
+    updateMediaPrefs(cameraOn, micEnabled);
+    setCameraEnabled(cameraOn);
+    for (const peer of fallbackPeersRef.current.values()) {
+      syncLocalTracksToFallbackPeer(peer, cameraOn, micEnabled);
+    }
   }
 
   async function startLocalPreviewCamera() {
-    if (localPreviewStreamRef.current) {
+    const existingVideo = localPreviewStreamRef.current?.getVideoTracks()[0];
+    if (existingVideo) {
+      existingVideo.enabled = true;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = localPreviewStreamRef.current;
         await localVideoRef.current.play().catch(() => undefined);
       }
       for (const peer of fallbackPeersRef.current.values()) {
-        addLocalTracksToFallbackPeer(peer);
+        syncLocalTracksToFallbackPeer(peer);
       }
       return true;
     }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      localPreviewStreamRef.current = stream;
+      const videoTrack = stream.getVideoTracks()[0];
+      const currentStream = localPreviewStreamRef.current ?? new MediaStream();
+      if (videoTrack) {
+        currentStream.addTrack(videoTrack);
+      }
+      localPreviewStreamRef.current = currentStream;
       if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
+        localVideoRef.current.srcObject = currentStream;
         await localVideoRef.current.play().catch(() => undefined);
       }
       for (const peer of fallbackPeersRef.current.values()) {
-        addLocalTracksToFallbackPeer(peer);
+        syncLocalTracksToFallbackPeer(peer);
       }
       setAccessError("");
       return true;
@@ -754,10 +920,55 @@ export default function MeetingRoomPage() {
   }
 
   function stopLocalPreviewCamera() {
-    localPreviewStreamRef.current?.getTracks().forEach((track) => track.stop());
-    localPreviewStreamRef.current = null;
+    localPreviewStreamRef.current?.getVideoTracks().forEach((track) => {
+      track.stop();
+      localPreviewStreamRef.current?.removeTrack(track);
+    });
+    if (localPreviewStreamRef.current?.getTracks().length === 0) {
+      localPreviewStreamRef.current = null;
+    }
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null;
+    }
+  }
+
+  async function startLocalPreviewMic() {
+    const existingAudio = localPreviewStreamRef.current?.getAudioTracks()[0];
+    if (existingAudio) {
+      existingAudio.enabled = true;
+      for (const peer of fallbackPeersRef.current.values()) {
+        syncLocalTracksToFallbackPeer(peer, cameraEnabledRef.current, true);
+      }
+      return true;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        const currentStream = localPreviewStreamRef.current ?? new MediaStream();
+        currentStream.addTrack(audioTrack);
+        localPreviewStreamRef.current = currentStream;
+      }
+      for (const peer of fallbackPeersRef.current.values()) {
+        syncLocalTracksToFallbackPeer(peer, cameraEnabledRef.current, true);
+      }
+      setAccessError("");
+      return Boolean(audioTrack);
+    } catch (error) {
+      const details = formatUnknownError(error);
+      setAccessError(`Microphone unavailable: ${details.message}`);
+      return false;
+    }
+  }
+
+  function stopLocalPreviewMic() {
+    localPreviewStreamRef.current?.getAudioTracks().forEach((track) => {
+      track.stop();
+      localPreviewStreamRef.current?.removeTrack(track);
+    });
+    if (localPreviewStreamRef.current?.getTracks().length === 0) {
+      localPreviewStreamRef.current = null;
     }
   }
 
@@ -765,13 +976,40 @@ export default function MeetingRoomPage() {
     const room = roomRef.current;
     const next = !micEnabled;
 
+    updateMediaPrefs(cameraEnabled, next);
     if (!room) {
-      setMicEnabled(next);
+      const micOn = next ? await startLocalPreviewMic() : false;
+      if (!next) {
+        stopLocalPreviewMic();
+      }
+      updateMediaPrefs(cameraEnabled, micOn);
+      setMicEnabled(micOn);
       return;
     }
 
-    await room.localParticipant.setMicrophoneEnabled(next);
-    setMicEnabled(next);
+    let micOn = next;
+    try {
+      await room.localParticipant.setMicrophoneEnabled(next);
+      if (!next) {
+        stopLocalPreviewMic();
+      }
+    } catch (error) {
+      if (next) {
+        micOn = await startLocalPreviewMic();
+      } else {
+        stopLocalPreviewMic();
+      }
+      const details = formatUnknownError(error);
+      if (!details.message.includes("Abort handler called")) {
+        setAccessError(`Microphone unavailable: ${details.message}`);
+      }
+    }
+
+    updateMediaPrefs(cameraEnabled, micOn);
+    setMicEnabled(micOn);
+    for (const peer of fallbackPeersRef.current.values()) {
+      syncLocalTracksToFallbackPeer(peer, cameraEnabled, micOn);
+    }
   }
 
   useEffect(() => {
@@ -786,9 +1024,11 @@ export default function MeetingRoomPage() {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       isLeavingRef.current = true;
+      connectAttemptRef.current += 1;
       roomRef.current?.disconnect();
       roomRef.current = null;
       stopLocalPreviewCamera();
+      stopLocalPreviewMic();
       if (copyToastTimeoutRef.current) {
         window.clearTimeout(copyToastTimeoutRef.current);
       }
@@ -879,20 +1119,26 @@ export default function MeetingRoomPage() {
         } | null;
         participants?: ActiveParticipant[];
         pendingParticipants?: PendingParticipant[];
+        meetingChatMessages?: MeetingChatMessage[];
       };
 
       if (!payload.sessionParticipant) {
         if (!hasBeenRemovedRef.current) {
           hasBeenRemovedRef.current = true;
-          setAccessError("You were removed from this room by the teacher.");
-          await leaveMeeting();
-          router.push("/landing");
+          if (selfRoleRef.current === "teacher") {
+            setAccessError("Join this meeting from lobby first.");
+          } else {
+            setAccessError("You were removed from this room by the teacher.");
+            await leaveMeeting();
+            router.push("/landing");
+          }
         }
         return;
       }
 
       const serverRole = payload.sessionParticipant?.role;
       if (serverRole === "teacher" || serverRole === "student") {
+        selfRoleRef.current = serverRole;
         setSelfRole(serverRole);
       }
       setIsHandRaised(Boolean(payload.sessionParticipant?.handRaised));
@@ -906,6 +1152,7 @@ export default function MeetingRoomPage() {
         (participant) => participant.role === "student" && participant.status === "active"
       );
       setActiveStudents(students);
+      setMeetingChatMessages(payload.meetingChatMessages ?? []);
 
       if (serverRole === "teacher") {
         setPendingParticipants(payload.pendingParticipants ?? []);
@@ -1322,8 +1569,38 @@ export default function MeetingRoomPage() {
           </nav>
         </section>
 
-        <section className="room-side-chat-card glass-panel" aria-label="Meeting Chat card">
-          <p>Meeting Chat</p>
+        <section className="room-side-chat-card room-meeting-chat-card glass-panel" aria-label="Meeting Chat card">
+          <div className="room-meeting-chat">
+            <p>Meeting Chat</p>
+            <div className="room-meeting-chat-thread" aria-live="polite">
+              {meetingChatMessages.map((message) => (
+                <article key={message.id} className="room-meeting-chat-message">
+                  <strong>{message.displayName}</strong>
+                  <span>{message.content}</span>
+                </article>
+              ))}
+              <div ref={meetingChatEndRef} />
+            </div>
+            {meetingChatError ? <span className="room-meeting-chat-error">{meetingChatError}</span> : null}
+            <form
+              className="room-meeting-chat-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void sendMeetingChatMessage();
+              }}
+            >
+              <input
+                type="text"
+                value={meetingChatInput}
+                onChange={(event) => setMeetingChatInput(event.target.value)}
+                placeholder="Type message..."
+                aria-label="Type a meeting chat message"
+              />
+              <button type="submit" disabled={meetingChatSending || meetingChatInput.trim().length === 0}>
+                Send
+              </button>
+            </form>
+          </div>
         </section>
       </div>
     </main>

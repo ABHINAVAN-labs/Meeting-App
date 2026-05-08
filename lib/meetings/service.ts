@@ -1,7 +1,9 @@
 import { randomUUID } from "crypto";
 import { normalizeMeetingCode, normalizeParticipantName } from "./validation";
 import {
+  addMeetingChatMessage,
   countRole,
+  getMeetingChatMessages,
   getParticipant,
   getParticipants,
   publishEvent,
@@ -11,7 +13,7 @@ import {
   updateParticipantStatus,
   upsertParticipant
 } from "./store";
-import type { JoinMeetingRequest, Participant } from "./types";
+import type { JoinMeetingRequest, MeetingChatMessage, Participant } from "./types";
 
 export type JoinResult =
   | { ok: true; meetingCode: string; participant: Participant; status: Participant["status"] }
@@ -58,6 +60,57 @@ export function listRoomParticipants(meetingCode: string, participantId?: string
   }
 
   return getParticipants(normalizedMeetingCode);
+}
+
+export function listVisibleMeetingChatMessages(meetingCode: string, participantId: string): MeetingChatMessage[] {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return [];
+  }
+
+  const participant = getParticipant(normalizedMeetingCode, participantId);
+  if (!participant) {
+    return [];
+  }
+
+  const messages = getMeetingChatMessages(normalizedMeetingCode);
+  if (participant.role === "teacher") {
+    return messages;
+  }
+
+  return messages.filter((message) => message.role === "teacher" || message.participantId === participantId);
+}
+
+export function sendMeetingChatMessage(
+  meetingCode: string,
+  participantId: string,
+  content: string
+): { ok: true; message: MeetingChatMessage } | { ok: false; message: string } {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code." };
+  }
+
+  const participant = getParticipant(normalizedMeetingCode, participantId);
+  if (!participant || participant.status !== "active") {
+    return { ok: false, message: "Only active participants can send messages." };
+  }
+
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return { ok: false, message: "Message is required." };
+  }
+
+  const message = addMeetingChatMessage(normalizedMeetingCode, {
+    id: randomUUID(),
+    participantId,
+    displayName: participant.displayName,
+    role: participant.role,
+    content: trimmedContent,
+    sentAt: Date.now()
+  });
+
+  return { ok: true, message };
 }
 
 export function leaveMeeting(meetingCode: string, participantId: string): void {

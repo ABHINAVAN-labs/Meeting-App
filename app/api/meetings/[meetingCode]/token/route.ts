@@ -47,7 +47,8 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
     return NextResponse.json({
       token,
       url: livekitUrl,
-      participantId: current.id
+      participantId: current.id,
+      role: current.role
     });
   } catch {
     return NextResponse.json({ message: "LiveKit credentials are not configured." }, { status: 500 });
