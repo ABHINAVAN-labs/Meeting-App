@@ -1420,6 +1420,7 @@ h1 {
   gap: 4px;
   padding: 8px 10px;
   border-radius: 12px;
+  max-width: 86%;
 }
 
 .room-ai-chat-message strong {
@@ -1452,6 +1453,7 @@ h1 {
 .room-ai-chat-message.user {
   background: rgba(255, 255, 255, 0.16);
   border: 1px solid rgba(255, 255, 255, 0.26);
+  justify-self: end;
 }
 
 .room-ai-chat-message.user strong,
@@ -1462,6 +1464,7 @@ h1 {
 .room-ai-chat-message.assistant {
   background: rgba(255, 231, 189, 0.14);
   border: 1px solid rgba(255, 219, 150, 0.34);
+  justify-self: start;
 }
 
 .room-ai-chat-message.assistant strong,
