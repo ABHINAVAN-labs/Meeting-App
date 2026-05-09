@@ -485,7 +485,8 @@ export default function MeetingRoomPage() {
       const response = await fetch("/api/ai-chat", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          ...(participantIdRef.current ? { "x-participant-id": participantIdRef.current } : {})
         },
         body: JSON.stringify({
           summary,
