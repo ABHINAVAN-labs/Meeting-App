@@ -307,6 +307,7 @@ export default function MeetingRoomPage() {
   const [aiInput, setAiInput] = useState("");
   const [aiSending, setAiSending] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [aiQueuedPrompt, setAiQueuedPrompt] = useState("");
   const [aiVerbosity, setAiVerbosity] = useState<AiVerbosity>("normal");
   const [aiChatHydrated, setAiChatHydrated] = useState(false);
   const [aiCopiedMessageId, setAiCopiedMessageId] = useState("");
@@ -518,9 +519,37 @@ export default function MeetingRoomPage() {
     }
   }
 
+  function requestAiMessage(messageText = aiInput) {
+    const userText = messageText.trim();
+    if (!userText) {
+      return;
+    }
+
+    if (aiSending) {
+      setAiQueuedPrompt(userText);
+      if (messageText === aiInput) {
+        setAiInput("");
+      }
+      return;
+    }
+
+    void sendAiMessage(userText);
+  }
+
+  useEffect(() => {
+    if (aiSending || !aiQueuedPrompt) {
+      return;
+    }
+
+    const nextPrompt = aiQueuedPrompt;
+    setAiQueuedPrompt("");
+    void sendAiMessage(nextPrompt);
+  }, [aiSending, aiQueuedPrompt]);
+
   function clearAiChat() {
     setAiMessages([]);
     setAiError("");
+    setAiQueuedPrompt("");
     if (readableMeetingCode) {
       window.sessionStorage.removeItem(aiChatKey(readableMeetingCode));
     }
@@ -1571,10 +1600,10 @@ export default function MeetingRoomPage() {
                       <button type="button" onClick={() => void copyAiMessage(message)}>
                         {aiCopiedMessageId === message.id ? "Copied" : "Copy"}
                       </button>
-                      <button type="button" disabled={aiSending} onClick={() => void sendAiMessage("Explain your previous answer more simply.")}>
+                      <button type="button" onClick={() => requestAiMessage("Explain your previous answer more simply.")}>
                         Simpler
                       </button>
-                      <button type="button" disabled={aiSending} onClick={() => void sendAiMessage("Give me a short example for your previous answer.")}>
+                      <button type="button" onClick={() => requestAiMessage("Give me a short example for your previous answer.")}>
                         Example
                       </button>
                     </div>
@@ -1594,6 +1623,7 @@ export default function MeetingRoomPage() {
               <div ref={aiMessagesEndRef} />
             </div>
             {aiError ? <span className="room-ai-chat-error">{aiError}</span> : null}
+            {aiQueuedPrompt ? <span className="room-ai-chat-queued">Queued</span> : null}
             <div className="room-ai-chat-verbosity" role="group" aria-label="AI response length">
               <button type="button" className={aiVerbosity === "short" ? "active" : ""} onClick={() => setAiVerbosity("short")}>
                 Short
@@ -1609,7 +1639,7 @@ export default function MeetingRoomPage() {
               className="room-ai-chat-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                void sendAiMessage();
+                requestAiMessage();
               }}
             >
               <input
@@ -1619,7 +1649,7 @@ export default function MeetingRoomPage() {
                 placeholder="Type your message..."
                 aria-label="Type a message for AI chat"
               />
-              <button type="submit" disabled={aiSending || aiInput.trim().length === 0}>
+              <button type="submit" disabled={aiInput.trim().length === 0}>
                 Send
               </button>
             </form>
