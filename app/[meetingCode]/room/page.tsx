@@ -144,6 +144,8 @@ function parseAssistantLines(content: string): AssistantLine[] {
 const SESSION_STORAGE_PREFIX = "meeting_participant_session_";
 const PREFS_STORAGE_PREFIX = "meeting_media_prefs_";
 const AI_CHAT_STORAGE_PREFIX = "meeting_ai_chat_";
+const AI_RECENT_MESSAGE_LIMIT = 12;
+const AI_SUMMARY_CHAR_LIMIT = 900;
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
@@ -159,6 +161,29 @@ function aiChatKey(meetingCode: string) {
 
 function createChatMessageId(role: AiChatMessage["role"]) {
   return `${Date.now()}-${role}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildAiContext(messages: AiChatMessage[]) {
+  const recentMessages = messages.slice(-AI_RECENT_MESSAGE_LIMIT);
+  const olderMessages = messages.slice(0, Math.max(0, messages.length - AI_RECENT_MESSAGE_LIMIT));
+
+  if (olderMessages.length === 0) {
+    return {
+      recentMessages,
+      summary: ""
+    };
+  }
+
+  const summary = olderMessages
+    .map((message) => `${message.role === "user" ? "User" : "AI"}: ${cleanAiDisplayText(message.content)}`)
+    .join("\n")
+    .slice(0, AI_SUMMARY_CHAR_LIMIT)
+    .trim();
+
+  return {
+    recentMessages,
+    summary
+  };
 }
 
 function RemoteVideo({ publication, stream }: { publication?: RemoteTrackPublication; stream?: MediaStream }) {
@@ -436,13 +461,15 @@ export default function MeetingRoomPage() {
     setAiError("");
 
     try {
+      const { recentMessages, summary } = buildAiContext(nextMessages);
       const response = await fetch("/api/ai-chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          messages: nextMessages.map((message) => ({
+          summary,
+          messages: recentMessages.map((message) => ({
             role: message.role,
             content: message.content
           }))
