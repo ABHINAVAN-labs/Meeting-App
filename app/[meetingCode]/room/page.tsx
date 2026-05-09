@@ -317,7 +317,6 @@ export default function MeetingRoomPage() {
   const [aiInput, setAiInput] = useState("");
   const [aiSending, setAiSending] = useState(false);
   const [aiError, setAiError] = useState("");
-  const [aiQueuedPrompt, setAiQueuedPrompt] = useState("");
   const [aiCooldownUntil, setAiCooldownUntil] = useState(0);
   const [aiCooldownSeconds, setAiCooldownSeconds] = useState(0);
   const [aiRequestIndicator, setAiRequestIndicator] = useState<AiRequestIndicator>("idle");
@@ -325,6 +324,7 @@ export default function MeetingRoomPage() {
   const [aiVerbosity, setAiVerbosity] = useState<AiVerbosity>("normal");
   const [aiChatHydrated, setAiChatHydrated] = useState(false);
   const [aiCopiedMessageId, setAiCopiedMessageId] = useState("");
+  const [aiCopiedCodeKey, setAiCopiedCodeKey] = useState("");
   const [meetingChatMessages, setMeetingChatMessages] = useState<MeetingChatMessage[]>([]);
   const [meetingChatInput, setMeetingChatInput] = useState("");
   const [meetingChatSending, setMeetingChatSending] = useState(false);
@@ -567,7 +567,6 @@ export default function MeetingRoomPage() {
       return;
     }
     aiAbortControllerRef.current?.abort();
-    setAiQueuedPrompt("");
     setAiRequestIndicator("idle");
   }
 
@@ -616,33 +615,6 @@ export default function MeetingRoomPage() {
     recognition.start();
   }
 
-  function requestAiMessage(messageText = aiInput) {
-    const userText = messageText.trim();
-    if (!userText || aiCooldownUntil > Date.now()) {
-      return;
-    }
-
-    if (aiSending) {
-      setAiQueuedPrompt(userText);
-      if (messageText === aiInput) {
-        setAiInput("");
-      }
-      return;
-    }
-
-    void sendAiMessage(userText);
-  }
-
-  useEffect(() => {
-    if (aiSending || !aiQueuedPrompt) {
-      return;
-    }
-
-    const nextPrompt = aiQueuedPrompt;
-    setAiQueuedPrompt("");
-    void sendAiMessage(nextPrompt);
-  }, [aiSending, aiQueuedPrompt]);
-
   useEffect(() => {
     if (aiCooldownUntil <= Date.now()) {
       setAiCooldownSeconds(0);
@@ -672,7 +644,6 @@ export default function MeetingRoomPage() {
   function clearAiChat() {
     setAiMessages([]);
     setAiError("");
-    setAiQueuedPrompt("");
     setAiRequestIndicator("idle");
     aiAbortControllerRef.current?.abort();
     if (readableMeetingCode) {
@@ -692,6 +663,21 @@ export default function MeetingRoomPage() {
       }, 1400);
     } catch {
       setAiError("Could not copy the AI response.");
+    }
+  }
+
+  async function copyAiCode(code: string, codeKey: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setAiCopiedCodeKey(codeKey);
+      if (aiCopyTimeoutRef.current) {
+        window.clearTimeout(aiCopyTimeoutRef.current);
+      }
+      aiCopyTimeoutRef.current = window.setTimeout(() => {
+        setAiCopiedCodeKey("");
+      }, 1400);
+    } catch {
+      setAiError("Could not copy code block.");
     }
   }
 
@@ -1700,7 +1686,16 @@ export default function MeetingRoomPage() {
                     splitAssistantContent(message.content).map((part, index) =>
                       part.type === "code" ? (
                         <div key={`${message.id}-code-${index}`} className="room-ai-chat-code-wrap">
-                          <div className="room-ai-chat-code-head">{getCodeBlockLabel(message.content, part.content)}</div>
+                          <div className="room-ai-chat-code-head-row">
+                            <div className="room-ai-chat-code-head">{getCodeBlockLabel(message.content, part.content)}</div>
+                            <button
+                              type="button"
+                              className="room-ai-chat-code-copy"
+                              onClick={() => void copyAiCode(part.content, `${message.id}-code-${index}`)}
+                            >
+                              {aiCopiedCodeKey === `${message.id}-code-${index}` ? "Copied" : "Copy code"}
+                            </button>
+                          </div>
                           <div className="room-ai-chat-code-card">
                             <pre>{part.content}</pre>
                           </div>
@@ -1731,10 +1726,10 @@ export default function MeetingRoomPage() {
                       <button type="button" onClick={() => void copyAiMessage(message)}>
                         {aiCopiedMessageId === message.id ? "Copied" : "Copy"}
                       </button>
-                      <button type="button" disabled={aiCooldownSeconds > 0} onClick={() => requestAiMessage("Explain your previous answer more simply.")}>
+                      <button type="button" disabled={aiCooldownSeconds > 0 || aiSending} onClick={() => void sendAiMessage("Explain your previous answer more simply.")}>
                         Simpler
                       </button>
-                      <button type="button" disabled={aiCooldownSeconds > 0} onClick={() => requestAiMessage("Give me a short example for your previous answer.")}>
+                      <button type="button" disabled={aiCooldownSeconds > 0 || aiSending} onClick={() => void sendAiMessage("Give me a short example for your previous answer.")}>
                         Example
                       </button>
                     </div>
@@ -1754,7 +1749,6 @@ export default function MeetingRoomPage() {
               <div ref={aiMessagesEndRef} />
             </div>
             {aiError ? <span className="room-ai-chat-error">{aiError}</span> : null}
-            {aiQueuedPrompt ? <span className="room-ai-chat-queued">Queued</span> : null}
             {aiCooldownSeconds > 0 ? <span className="room-ai-chat-cooldown">Try again in {aiCooldownSeconds}s</span> : null}
             <div className="room-ai-chat-verbosity" role="group" aria-label="AI response length">
               <button type="button" className={aiVerbosity === "short" ? "active" : ""} onClick={() => setAiVerbosity("short")}>
@@ -1771,7 +1765,7 @@ export default function MeetingRoomPage() {
               className={`room-ai-chat-form${aiSending ? " sending" : ""}`}
               onSubmit={(event) => {
                 event.preventDefault();
-                requestAiMessage();
+                void sendAiMessage();
               }}
             >
               <div className="room-ai-chat-input-wrap">
