@@ -68,6 +68,8 @@ function cleanAiDisplayText(content: string) {
     .replace(/^\s*[-*+]\s+/gm, "- ")
     .replace(/^\s*\d+\.\s+/gm, (match) => match.trimStart())
     .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, "$1$2")
+    .replace(/"\s*\*([^*\n]+)\*\s*"/g, '"$1"')
+    .replace(/\*([^*\n]+)\*/g, "$1")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -85,6 +87,11 @@ function cleanStructuredText(content: string) {
 type AssistantPart =
   | { type: "text"; content: string }
   | { type: "code"; content: string };
+
+type AssistantLine = {
+  kind: "heading" | "bullet" | "numbered" | "paragraph";
+  text: string;
+};
 
 function splitAssistantContent(content: string): AssistantPart[] {
   const normalized = content.replace(/\r/g, "");
@@ -118,8 +125,25 @@ function splitAssistantContent(content: string): AssistantPart[] {
   return parts;
 }
 
+function parseAssistantLines(content: string): AssistantLine[] {
+  const lines = content.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+  return lines.map((line) => {
+    if (/^[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(line) || line.endsWith(":")) {
+      return { kind: "heading", text: line.replace(/^#+\s*/, "") };
+    }
+    if (/^[-*]\s+/.test(line)) {
+      return { kind: "bullet", text: line.replace(/^[-*]\s+/, "") };
+    }
+    if (/^\d+\.\s+/.test(line)) {
+      return { kind: "numbered", text: line };
+    }
+    return { kind: "paragraph", text: line };
+  });
+}
+
 const SESSION_STORAGE_PREFIX = "meeting_participant_session_";
 const PREFS_STORAGE_PREFIX = "meeting_media_prefs_";
+const AI_CHAT_STORAGE_PREFIX = "meeting_ai_chat_";
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
@@ -127,6 +151,14 @@ function sessionKey(meetingCode: string) {
 
 function prefsKey(meetingCode: string) {
   return `${PREFS_STORAGE_PREFIX}${meetingCode}`;
+}
+
+function aiChatKey(meetingCode: string) {
+  return `${AI_CHAT_STORAGE_PREFIX}${meetingCode}`;
+}
+
+function createChatMessageId(role: AiChatMessage["role"]) {
+  return `${Date.now()}-${role}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function RemoteVideo({ publication, stream }: { publication?: RemoteTrackPublication; stream?: MediaStream }) {
@@ -236,6 +268,8 @@ export default function MeetingRoomPage() {
   const [aiInput, setAiInput] = useState("");
   const [aiSending, setAiSending] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [aiChatHydrated, setAiChatHydrated] = useState(false);
+  const [aiCopiedMessageId, setAiCopiedMessageId] = useState("");
   const [meetingChatMessages, setMeetingChatMessages] = useState<MeetingChatMessage[]>([]);
   const [meetingChatInput, setMeetingChatInput] = useState("");
   const [meetingChatSending, setMeetingChatSending] = useState(false);
@@ -245,6 +279,7 @@ export default function MeetingRoomPage() {
   const selfRoleRef = useRef<ParticipantRole | null>(null);
   const connectAttemptRef = useRef(0);
   const copyToastTimeoutRef = useRef<number | null>(null);
+  const aiCopyTimeoutRef = useRef<number | null>(null);
   const isLeavingRef = useRef(false);
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -308,6 +343,39 @@ export default function MeetingRoomPage() {
   }, [aiMessages, aiSending]);
 
   useEffect(() => {
+    if (!readableMeetingCode) {
+      setAiChatHydrated(true);
+      return;
+    }
+
+    const savedMessages = window.sessionStorage.getItem(aiChatKey(readableMeetingCode));
+    if (savedMessages) {
+      try {
+        const parsed = JSON.parse(savedMessages) as AiChatMessage[];
+        const validMessages = parsed.filter(
+          (message) =>
+            (message.role === "user" || message.role === "assistant") &&
+            typeof message.content === "string" &&
+            typeof message.id === "string"
+        );
+        setAiMessages(validMessages);
+      } catch {
+        window.sessionStorage.removeItem(aiChatKey(readableMeetingCode));
+      }
+    }
+
+    setAiChatHydrated(true);
+  }, [readableMeetingCode]);
+
+  useEffect(() => {
+    if (!aiChatHydrated || !readableMeetingCode) {
+      return;
+    }
+
+    window.sessionStorage.setItem(aiChatKey(readableMeetingCode), JSON.stringify(aiMessages));
+  }, [aiChatHydrated, aiMessages, readableMeetingCode]);
+
+  useEffect(() => {
     meetingChatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [meetingChatMessages]);
 
@@ -347,21 +415,23 @@ export default function MeetingRoomPage() {
     }
   }
 
-  async function sendAiMessage() {
-    const userText = aiInput.trim();
+  async function sendAiMessage(messageText = aiInput) {
+    const userText = messageText.trim();
     if (!userText || aiSending) {
       return;
     }
 
     const userMessage: AiChatMessage = {
-      id: `${Date.now()}-user`,
+      id: createChatMessageId("user"),
       role: "user",
       content: userText
     };
 
     const nextMessages = [...aiMessages, userMessage];
     setAiMessages(nextMessages);
-    setAiInput("");
+    if (messageText === aiInput) {
+      setAiInput("");
+    }
     setAiSending(true);
     setAiError("");
 
@@ -387,7 +457,7 @@ export default function MeetingRoomPage() {
       }
 
       const assistantMessage: AiChatMessage = {
-        id: `${Date.now()}-assistant`,
+        id: createChatMessageId("assistant"),
         role: "assistant",
         content: data.reply
       };
@@ -396,6 +466,29 @@ export default function MeetingRoomPage() {
       setAiError(error instanceof Error ? error.message : "Failed to get AI response.");
     } finally {
       setAiSending(false);
+    }
+  }
+
+  function clearAiChat() {
+    setAiMessages([]);
+    setAiError("");
+    if (readableMeetingCode) {
+      window.sessionStorage.removeItem(aiChatKey(readableMeetingCode));
+    }
+  }
+
+  async function copyAiMessage(message: AiChatMessage) {
+    try {
+      await navigator.clipboard.writeText(cleanAiDisplayText(message.content));
+      setAiCopiedMessageId(message.id);
+      if (aiCopyTimeoutRef.current) {
+        window.clearTimeout(aiCopyTimeoutRef.current);
+      }
+      aiCopyTimeoutRef.current = window.setTimeout(() => {
+        setAiCopiedMessageId("");
+      }, 1400);
+    } catch {
+      setAiError("Could not copy the AI response.");
     }
   }
 
@@ -1032,6 +1125,9 @@ export default function MeetingRoomPage() {
       if (copyToastTimeoutRef.current) {
         window.clearTimeout(copyToastTimeoutRef.current);
       }
+      if (aiCopyTimeoutRef.current) {
+        window.clearTimeout(aiCopyTimeoutRef.current);
+      }
     };
   }, [readableMeetingCode]);
 
@@ -1375,7 +1471,14 @@ export default function MeetingRoomPage() {
       <div className="room-cards-layout">
         <section className="room-side-chat-card room-ai-chat-card glass-panel" aria-label="AI Chat card">
           <div className="room-ai-chat">
-            <p>AI Chat</p>
+            <div className="room-ai-chat-header">
+              <p>AI Chat</p>
+              {aiMessages.length > 0 ? (
+                <button type="button" onClick={clearAiChat}>
+                  Clear
+                </button>
+              ) : null}
+            </div>
             <div className="room-ai-chat-thread" aria-live="polite">
               {aiMessages.length === 0 ? <span className="room-ai-chat-empty">Ask anything about the class.</span> : null}
               {aiMessages.map((message) => (
@@ -1388,24 +1491,55 @@ export default function MeetingRoomPage() {
                     splitAssistantContent(message.content).map((part, index) =>
                       part.type === "code" ? (
                         <div key={`${message.id}-code-${index}`} className="room-ai-chat-code-wrap">
-                          <div className="room-ai-chat-code-head">💻 Pseudocode</div>
+                          <div className="room-ai-chat-code-head">Pseudocode</div>
                           <div className="room-ai-chat-code-card">
                             <pre>{part.content}</pre>
                           </div>
                         </div>
                       ) : (
-                        <p key={`${message.id}-text-${index}`}>{part.content}</p>
+                        <div key={`${message.id}-text-${index}`} className="room-ai-chat-text">
+                          {parseAssistantLines(part.content).map((line, lineIndex) => (
+                            <p key={`${message.id}-line-${index}-${lineIndex}`} className={`room-ai-chat-line ${line.kind}`}>
+                              {line.kind === "bullet" ? `- ${line.text}` : line.text}
+                            </p>
+                          ))}
+                        </div>
                       )
                     )
+                  ) : message.role === "assistant" ? (
+                    <div className="room-ai-chat-text">
+                      {parseAssistantLines(cleanAiDisplayText(message.content)).map((line, lineIndex) => (
+                        <p key={`${message.id}-plain-line-${lineIndex}`} className={`room-ai-chat-line ${line.kind}`}>
+                          {line.kind === "bullet" ? `- ${line.text}` : line.text}
+                        </p>
+                      ))}
+                    </div>
                   ) : (
-                    <p>{message.role === "assistant" ? cleanAiDisplayText(message.content) : message.content}</p>
+                    <p>{message.content}</p>
                   )}
+                  {message.role === "assistant" ? (
+                    <div className="room-ai-chat-actions">
+                      <button type="button" onClick={() => void copyAiMessage(message)}>
+                        {aiCopiedMessageId === message.id ? "Copied" : "Copy"}
+                      </button>
+                      <button type="button" disabled={aiSending} onClick={() => void sendAiMessage("Explain your previous answer more simply.")}>
+                        Simpler
+                      </button>
+                      <button type="button" disabled={aiSending} onClick={() => void sendAiMessage("Give me a short example for your previous answer.")}>
+                        Example
+                      </button>
+                    </div>
+                  ) : null}
                 </article>
               ))}
               {aiSending ? (
                 <article className="room-ai-chat-message assistant">
                   <strong>AI</strong>
-                  <p>Thinking...</p>
+                  <div className="room-ai-typing" aria-label="AI is thinking">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
                 </article>
               ) : null}
               <div ref={aiMessagesEndRef} />
