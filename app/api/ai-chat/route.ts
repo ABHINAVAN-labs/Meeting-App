@@ -33,6 +33,26 @@ function getVerbosityPrompt(verbosity: RequestBody["verbosity"]) {
   return "Keep a balanced explanation: clear and moderately detailed.";
 }
 
+function getMaxTokens(verbosity: RequestBody["verbosity"]) {
+  if (verbosity === "short") {
+    return 280;
+  }
+  if (verbosity === "detailed") {
+    return 900;
+  }
+  return 520;
+}
+
+function getOutputBoundPrompt(verbosity: RequestBody["verbosity"]) {
+  if (verbosity === "short") {
+    return "Hard limit: keep output under 120 words unless user explicitly asks for more.";
+  }
+  if (verbosity === "detailed") {
+    return "Keep output focused and structured; avoid unnecessary repetition.";
+  }
+  return "Keep output concise and avoid unnecessary detail.";
+}
+
 function getRateLimitKey(request: Request) {
   const participantId = request.headers.get("x-participant-id")?.trim();
   if (participantId) {
@@ -213,9 +233,11 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         model: MODEL,
+        max_tokens: getMaxTokens(verbosity),
         messages: [
           { role: "system", content: STYLE_SYSTEM_PROMPT },
           { role: "system", content: getVerbosityPrompt(verbosity) },
+          { role: "system", content: getOutputBoundPrompt(verbosity) },
           ...(summary ? [{ role: "system", content: `Conversation summary:\n${summary}` }] : []),
           ...validMessages
         ]

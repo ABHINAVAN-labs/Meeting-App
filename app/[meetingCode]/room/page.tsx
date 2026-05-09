@@ -156,6 +156,7 @@ const AI_CHAT_STORAGE_PREFIX = "meeting_ai_chat_";
 const AI_CHAT_VERBOSITY_STORAGE_PREFIX = "meeting_ai_verbosity_";
 const AI_RECENT_MESSAGE_LIMIT = 12;
 const AI_SUMMARY_CHAR_LIMIT = 900;
+const AI_REPLY_RENDER_CHAR_LIMIT = 5000;
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
@@ -175,6 +176,14 @@ function aiChatVerbosityKey(meetingCode: string) {
 
 function createChatMessageId(role: AiChatMessage["role"]) {
   return `${Date.now()}-${role}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function capAiReplyContent(content: string) {
+  const text = content.trim();
+  if (text.length <= AI_REPLY_RENDER_CHAR_LIMIT) {
+    return text;
+  }
+  return `${text.slice(0, AI_REPLY_RENDER_CHAR_LIMIT).trim()}\n\n[Response truncated for readability]`;
 }
 
 function buildAiContext(messages: AiChatMessage[]) {
@@ -509,7 +518,7 @@ export default function MeetingRoomPage() {
       const assistantMessage: AiChatMessage = {
         id: createChatMessageId("assistant"),
         role: "assistant",
-        content: data.reply
+        content: capAiReplyContent(data.reply)
       };
       setAiMessages((current) => [...current, assistantMessage]);
     } catch (error) {
