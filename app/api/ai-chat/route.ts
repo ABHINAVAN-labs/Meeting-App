@@ -16,8 +16,12 @@ const MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 const REQUEST_TIMEOUT_MS = 15000;
 const MAX_RETRIES = 1;
 const SUMMARY_CHAR_LIMIT = 1000;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 8;
 const STYLE_SYSTEM_PROMPT =
   "You are a classroom AI tutor. Write clear, student-friendly answers. Use short sections, simple bullets, and concise steps. Avoid long walls of text. When you present tabular data, always use strict GitHub-Flavored Markdown table syntax: include header row, delimiter row with at least three hyphens per column, and data rows; every row must start and end with pipe characters; do not use ASCII box-drawing, plus-dash tables, or space-aligned plain-text columns.";
+
+const rateLimitStore = new Map<string, number[]>();
 
 function getVerbosityPrompt(verbosity: RequestBody["verbosity"]) {
   if (verbosity === "short") {
@@ -27,6 +31,36 @@ function getVerbosityPrompt(verbosity: RequestBody["verbosity"]) {
     return "Give a fuller explanation with clear steps and one compact example when helpful.";
   }
   return "Keep a balanced explanation: clear and moderately detailed.";
+}
+
+function getRateLimitKey(request: Request) {
+  const participantId = request.headers.get("x-participant-id")?.trim();
+  if (participantId) {
+    return `participant:${participantId}`;
+  }
+
+  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  if (forwardedFor) {
+    return `ip:${forwardedFor}`;
+  }
+
+  return "ip:unknown";
+}
+
+function checkRateLimit(key: string) {
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+  const recent = (rateLimitStore.get(key) ?? []).filter((timestamp) => timestamp >= windowStart);
+
+  if (recent.length >= RATE_LIMIT_MAX_REQUESTS) {
+    rateLimitStore.set(key, recent);
+    const retryAfterSeconds = Math.ceil((recent[0] + RATE_LIMIT_WINDOW_MS - now) / 1000);
+    return { allowed: false as const, retryAfterSeconds };
+  }
+
+  recent.push(now);
+  rateLimitStore.set(key, recent);
+  return { allowed: true as const, retryAfterSeconds: 0 };
 }
 
 function extractReplyContent(raw: unknown): string {
@@ -128,6 +162,20 @@ async function fetchWithTimeoutAndRetry(url: string, init: RequestInit) {
 }
 
 export async function POST(request: Request) {
+  const rateLimitKey = getRateLimitKey(request);
+  const rateLimit = checkRateLimit(rateLimitKey);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: `Too many AI requests. Please wait ${rateLimit.retryAfterSeconds}s and try again.` },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(rateLimit.retryAfterSeconds)
+        }
+      }
+    );
+  }
+
   const apiKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
   if (!apiKey) {
     return NextResponse.json({ error: "Missing OPENROUTER_API_KEY" }, { status: 500 });
