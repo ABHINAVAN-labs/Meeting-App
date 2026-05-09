@@ -1956,7 +1956,10 @@ export default function MeetingRoomPage() {
             <p>Meeting Chat</p>
             <div className="room-meeting-chat-thread" aria-live="polite">
               {meetingChatMessages.map((message) => (
-                <article key={message.id} className="room-meeting-chat-message">
+                <article
+                  key={message.id}
+                  className={`room-meeting-chat-message ${message.participantId === participantIdRef.current ? "own" : "other"}`}
+                >
                   <strong>{message.displayName}</strong>
                   <span>{message.content}</span>
                 </article>

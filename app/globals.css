@@ -1778,6 +1778,15 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.26);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.16);
+  max-width: 86%;
+}
+
+.room-meeting-chat-message.own {
+  justify-self: end;
+}
+
+.room-meeting-chat-message.other {
+  justify-self: start;
 }
 
 .room-meeting-chat-message strong {
