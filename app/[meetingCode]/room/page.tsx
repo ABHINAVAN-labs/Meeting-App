@@ -50,6 +50,7 @@ type AiChatMessage = {
   role: "user" | "assistant";
   content: string;
 };
+type AiVerbosity = "short" | "normal" | "detailed";
 type MeetingChatMessage = {
   id: string;
   participantId: string;
@@ -125,6 +126,14 @@ function splitAssistantContent(content: string): AssistantPart[] {
   return parts;
 }
 
+function getCodeBlockLabel(fullMessage: string, blockContent: string) {
+  const text = `${fullMessage}\n${blockContent}`.toLowerCase();
+  if (text.includes("pseudocode")) {
+    return "Pseudocode";
+  }
+  return "Code";
+}
+
 function parseAssistantLines(content: string): AssistantLine[] {
   const lines = content.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
   return lines.map((line) => {
@@ -144,6 +153,7 @@ function parseAssistantLines(content: string): AssistantLine[] {
 const SESSION_STORAGE_PREFIX = "meeting_participant_session_";
 const PREFS_STORAGE_PREFIX = "meeting_media_prefs_";
 const AI_CHAT_STORAGE_PREFIX = "meeting_ai_chat_";
+const AI_CHAT_VERBOSITY_STORAGE_PREFIX = "meeting_ai_verbosity_";
 const AI_RECENT_MESSAGE_LIMIT = 12;
 const AI_SUMMARY_CHAR_LIMIT = 900;
 
@@ -157,6 +167,10 @@ function prefsKey(meetingCode: string) {
 
 function aiChatKey(meetingCode: string) {
   return `${AI_CHAT_STORAGE_PREFIX}${meetingCode}`;
+}
+
+function aiChatVerbosityKey(meetingCode: string) {
+  return `${AI_CHAT_VERBOSITY_STORAGE_PREFIX}${meetingCode}`;
 }
 
 function createChatMessageId(role: AiChatMessage["role"]) {
@@ -293,6 +307,7 @@ export default function MeetingRoomPage() {
   const [aiInput, setAiInput] = useState("");
   const [aiSending, setAiSending] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [aiVerbosity, setAiVerbosity] = useState<AiVerbosity>("normal");
   const [aiChatHydrated, setAiChatHydrated] = useState(false);
   const [aiCopiedMessageId, setAiCopiedMessageId] = useState("");
   const [meetingChatMessages, setMeetingChatMessages] = useState<MeetingChatMessage[]>([]);
@@ -374,6 +389,7 @@ export default function MeetingRoomPage() {
     }
 
     const savedMessages = window.sessionStorage.getItem(aiChatKey(readableMeetingCode));
+    const savedVerbosity = window.sessionStorage.getItem(aiChatVerbosityKey(readableMeetingCode));
     if (savedMessages) {
       try {
         const parsed = JSON.parse(savedMessages) as AiChatMessage[];
@@ -388,6 +404,9 @@ export default function MeetingRoomPage() {
         window.sessionStorage.removeItem(aiChatKey(readableMeetingCode));
       }
     }
+    if (savedVerbosity === "short" || savedVerbosity === "normal" || savedVerbosity === "detailed") {
+      setAiVerbosity(savedVerbosity);
+    }
 
     setAiChatHydrated(true);
   }, [readableMeetingCode]);
@@ -398,7 +417,8 @@ export default function MeetingRoomPage() {
     }
 
     window.sessionStorage.setItem(aiChatKey(readableMeetingCode), JSON.stringify(aiMessages));
-  }, [aiChatHydrated, aiMessages, readableMeetingCode]);
+    window.sessionStorage.setItem(aiChatVerbosityKey(readableMeetingCode), aiVerbosity);
+  }, [aiChatHydrated, aiMessages, aiVerbosity, readableMeetingCode]);
 
   useEffect(() => {
     meetingChatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -469,6 +489,7 @@ export default function MeetingRoomPage() {
         },
         body: JSON.stringify({
           summary,
+          verbosity: aiVerbosity,
           messages: recentMessages.map((message) => ({
             role: message.role,
             content: message.content
@@ -1518,7 +1539,7 @@ export default function MeetingRoomPage() {
                     splitAssistantContent(message.content).map((part, index) =>
                       part.type === "code" ? (
                         <div key={`${message.id}-code-${index}`} className="room-ai-chat-code-wrap">
-                          <div className="room-ai-chat-code-head">Pseudocode</div>
+                          <div className="room-ai-chat-code-head">{getCodeBlockLabel(message.content, part.content)}</div>
                           <div className="room-ai-chat-code-card">
                             <pre>{part.content}</pre>
                           </div>
@@ -1572,6 +1593,17 @@ export default function MeetingRoomPage() {
               <div ref={aiMessagesEndRef} />
             </div>
             {aiError ? <span className="room-ai-chat-error">{aiError}</span> : null}
+            <div className="room-ai-chat-verbosity" role="group" aria-label="AI response length">
+              <button type="button" className={aiVerbosity === "short" ? "active" : ""} onClick={() => setAiVerbosity("short")}>
+                Short
+              </button>
+              <button type="button" className={aiVerbosity === "normal" ? "active" : ""} onClick={() => setAiVerbosity("normal")}>
+                Normal
+              </button>
+              <button type="button" className={aiVerbosity === "detailed" ? "active" : ""} onClick={() => setAiVerbosity("detailed")}>
+                Detailed
+              </button>
+            </div>
             <form
               className="room-ai-chat-form"
               onSubmit={(event) => {

@@ -1582,6 +1582,29 @@ h1 {
   line-height: 1.3;
 }
 
+.room-ai-chat-verbosity {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.room-ai-chat-verbosity button {
+  min-height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9px;
+  color: #ffe8c0;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.room-ai-chat-verbosity button.active {
+  color: #2e1400;
+  border-color: rgba(255, 222, 167, 0.44);
+  background: #ffd38e;
+}
+
 .room-ai-chat-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
