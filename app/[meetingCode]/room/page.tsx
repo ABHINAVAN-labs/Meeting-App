@@ -51,6 +51,7 @@ type AiChatMessage = {
   content: string;
 };
 type AiVerbosity = "short" | "normal" | "detailed";
+type AiRequestIndicator = "idle" | "running" | "success";
 type MeetingChatMessage = {
   id: string;
   participantId: string;
@@ -317,6 +318,10 @@ export default function MeetingRoomPage() {
   const [aiSending, setAiSending] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiQueuedPrompt, setAiQueuedPrompt] = useState("");
+  const [aiCooldownUntil, setAiCooldownUntil] = useState(0);
+  const [aiCooldownSeconds, setAiCooldownSeconds] = useState(0);
+  const [aiRequestIndicator, setAiRequestIndicator] = useState<AiRequestIndicator>("idle");
+  const [aiMicListening, setAiMicListening] = useState(false);
   const [aiVerbosity, setAiVerbosity] = useState<AiVerbosity>("normal");
   const [aiChatHydrated, setAiChatHydrated] = useState(false);
   const [aiCopiedMessageId, setAiCopiedMessageId] = useState("");
@@ -330,6 +335,19 @@ export default function MeetingRoomPage() {
   const connectAttemptRef = useRef(0);
   const copyToastTimeoutRef = useRef<number | null>(null);
   const aiCopyTimeoutRef = useRef<number | null>(null);
+  const aiCooldownTimerRef = useRef<number | null>(null);
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
+  const aiSpeechRecognitionRef = useRef<{
+    start: () => void;
+    stop: () => void;
+    abort: () => void;
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    onresult: ((event: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+    onerror: (() => void) | null;
+    onend: (() => void) | null;
+  } | null>(null);
   const isLeavingRef = useRef(false);
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -472,7 +490,7 @@ export default function MeetingRoomPage() {
 
   async function sendAiMessage(messageText = aiInput) {
     const userText = messageText.trim();
-    if (!userText || aiSending) {
+    if (!userText || aiSending || aiCooldownUntil > Date.now()) {
       return;
     }
 
@@ -488,12 +506,16 @@ export default function MeetingRoomPage() {
       setAiInput("");
     }
     setAiSending(true);
+    setAiRequestIndicator("running");
     setAiError("");
 
     try {
+      const controller = new AbortController();
+      aiAbortControllerRef.current = controller;
       const { recentMessages, summary } = buildAiContext(nextMessages);
       const response = await fetch("/api/ai-chat", {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
           ...(participantIdRef.current ? { "x-participant-id": participantIdRef.current } : {})
@@ -509,6 +531,11 @@ export default function MeetingRoomPage() {
       });
 
       const data = (await response.json()) as { reply?: string; error?: string; details?: string };
+      if (response.status === 429) {
+        const retryAfterRaw = Number(response.headers.get("Retry-After") ?? "0");
+        const retryAfterSeconds = Number.isFinite(retryAfterRaw) && retryAfterRaw > 0 ? Math.ceil(retryAfterRaw) : 10;
+        setAiCooldownUntil(Date.now() + retryAfterSeconds * 1000);
+      }
 
       if (!response.ok || !data.reply) {
         const detailText = data.details ? ` ${data.details}` : "";
@@ -521,16 +548,77 @@ export default function MeetingRoomPage() {
         content: capAiReplyContent(data.reply)
       };
       setAiMessages((current) => [...current, assistantMessage]);
+      setAiRequestIndicator("success");
     } catch (error) {
-      setAiError(error instanceof Error ? error.message : "Failed to get AI response.");
+      if (error instanceof Error && error.name === "AbortError") {
+        setAiError("Request cancelled.");
+      } else {
+        setAiError(error instanceof Error ? error.message : "Failed to get AI response.");
+      }
+      setAiRequestIndicator("idle");
     } finally {
+      aiAbortControllerRef.current = null;
       setAiSending(false);
     }
   }
 
+  function cancelAiRequest() {
+    if (!aiSending) {
+      return;
+    }
+    aiAbortControllerRef.current?.abort();
+    setAiQueuedPrompt("");
+    setAiRequestIndicator("idle");
+  }
+
+  function toggleAiMicInput() {
+    const SpeechRecognitionCtor =
+      (window as unknown as { SpeechRecognition?: new () => typeof aiSpeechRecognitionRef.current; webkitSpeechRecognition?: new () => typeof aiSpeechRecognitionRef.current })
+        .SpeechRecognition ??
+      (window as unknown as { webkitSpeechRecognition?: new () => typeof aiSpeechRecognitionRef.current }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      setAiError("Mic input is not supported in this browser.");
+      return;
+    }
+
+    if (aiMicListening) {
+      aiSpeechRecognitionRef.current?.stop();
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    if (!recognition) {
+      setAiError("Mic input is not available.");
+      return;
+    }
+
+    aiSpeechRecognitionRef.current = recognition;
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    recognition.onresult = (event) => {
+      const result = event.results[event.resultIndex];
+      const transcript = result?.[0]?.transcript?.trim();
+      if (!transcript) {
+        return;
+      }
+      setAiInput((current) => `${current}${current ? " " : ""}${transcript}`);
+    };
+    recognition.onerror = () => {
+      setAiMicListening(false);
+    };
+    recognition.onend = () => {
+      setAiMicListening(false);
+    };
+
+    setAiMicListening(true);
+    recognition.start();
+  }
+
   function requestAiMessage(messageText = aiInput) {
     const userText = messageText.trim();
-    if (!userText) {
+    if (!userText || aiCooldownUntil > Date.now()) {
       return;
     }
 
@@ -555,10 +643,38 @@ export default function MeetingRoomPage() {
     void sendAiMessage(nextPrompt);
   }, [aiSending, aiQueuedPrompt]);
 
+  useEffect(() => {
+    if (aiCooldownUntil <= Date.now()) {
+      setAiCooldownSeconds(0);
+      return;
+    }
+
+    const updateCooldown = () => {
+      const remaining = Math.max(0, Math.ceil((aiCooldownUntil - Date.now()) / 1000));
+      setAiCooldownSeconds(remaining);
+      if (remaining === 0 && aiCooldownTimerRef.current) {
+        window.clearInterval(aiCooldownTimerRef.current);
+        aiCooldownTimerRef.current = null;
+      }
+    };
+
+    updateCooldown();
+    aiCooldownTimerRef.current = window.setInterval(updateCooldown, 250);
+
+    return () => {
+      if (aiCooldownTimerRef.current) {
+        window.clearInterval(aiCooldownTimerRef.current);
+        aiCooldownTimerRef.current = null;
+      }
+    };
+  }, [aiCooldownUntil]);
+
   function clearAiChat() {
     setAiMessages([]);
     setAiError("");
     setAiQueuedPrompt("");
+    setAiRequestIndicator("idle");
+    aiAbortControllerRef.current?.abort();
     if (readableMeetingCode) {
       window.sessionStorage.removeItem(aiChatKey(readableMeetingCode));
     }
@@ -1215,6 +1331,12 @@ export default function MeetingRoomPage() {
       if (aiCopyTimeoutRef.current) {
         window.clearTimeout(aiCopyTimeoutRef.current);
       }
+      if (aiCooldownTimerRef.current) {
+        window.clearInterval(aiCooldownTimerRef.current);
+        aiCooldownTimerRef.current = null;
+      }
+      aiSpeechRecognitionRef.current?.abort();
+      aiAbortControllerRef.current?.abort();
     };
   }, [readableMeetingCode]);
 
@@ -1609,10 +1731,10 @@ export default function MeetingRoomPage() {
                       <button type="button" onClick={() => void copyAiMessage(message)}>
                         {aiCopiedMessageId === message.id ? "Copied" : "Copy"}
                       </button>
-                      <button type="button" onClick={() => requestAiMessage("Explain your previous answer more simply.")}>
+                      <button type="button" disabled={aiCooldownSeconds > 0} onClick={() => requestAiMessage("Explain your previous answer more simply.")}>
                         Simpler
                       </button>
-                      <button type="button" onClick={() => requestAiMessage("Give me a short example for your previous answer.")}>
+                      <button type="button" disabled={aiCooldownSeconds > 0} onClick={() => requestAiMessage("Give me a short example for your previous answer.")}>
                         Example
                       </button>
                     </div>
@@ -1633,6 +1755,7 @@ export default function MeetingRoomPage() {
             </div>
             {aiError ? <span className="room-ai-chat-error">{aiError}</span> : null}
             {aiQueuedPrompt ? <span className="room-ai-chat-queued">Queued</span> : null}
+            {aiCooldownSeconds > 0 ? <span className="room-ai-chat-cooldown">Try again in {aiCooldownSeconds}s</span> : null}
             <div className="room-ai-chat-verbosity" role="group" aria-label="AI response length">
               <button type="button" className={aiVerbosity === "short" ? "active" : ""} onClick={() => setAiVerbosity("short")}>
                 Short
@@ -1645,22 +1768,54 @@ export default function MeetingRoomPage() {
               </button>
             </div>
             <form
-              className="room-ai-chat-form"
+              className={`room-ai-chat-form${aiSending ? " sending" : ""}`}
               onSubmit={(event) => {
                 event.preventDefault();
                 requestAiMessage();
               }}
             >
-              <input
-                type="text"
-                value={aiInput}
-                onChange={(event) => setAiInput(event.target.value)}
-                placeholder="Type your message..."
-                aria-label="Type a message for AI chat"
-              />
-              <button type="submit" disabled={aiInput.trim().length === 0}>
-                Send
-              </button>
+              <div className="room-ai-chat-input-wrap">
+                <input
+                  type="text"
+                  value={aiInput}
+                  onChange={(event) => setAiInput(event.target.value)}
+                  placeholder="Type your message..."
+                  aria-label="Type a message for AI chat"
+                />
+                <div className="room-ai-chat-input-icons">
+                  <button
+                    type="button"
+                    className={`room-ai-chat-inline-icon mic ${aiMicListening ? "active" : ""}`}
+                    aria-label={aiMicListening ? "Stop microphone input" : "Use microphone input"}
+                    onClick={toggleAiMicInput}
+                    disabled={aiSending}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 14.5c1.7 0 3-1.3 3-3V6c0-1.7-1.3-3-3-3S9 4.3 9 6v5.5c0 1.7 1.3 3 3 3Z" />
+                      <path d="M18 11.5c0 3.1-2.4 5.5-6 5.5s-6-2.4-6-5.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                      <path d="M12 17v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                      <path d="M9 21h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                    </svg>
+                  </button>
+                  {aiSending ? (
+                    <button
+                      type="button"
+                      className="room-ai-chat-inline-icon stop"
+                      aria-label="Cancel AI request"
+                      onClick={cancelAiRequest}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="8" y="8" width="8" height="8" rx="1.6" />
+                      </svg>
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              {!aiSending ? (
+                <button type="submit" disabled={aiInput.trim().length === 0 || aiCooldownSeconds > 0}>
+                  Send
+                </button>
+              ) : null}
             </form>
           </div>
         </section>
