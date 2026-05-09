@@ -7,10 +7,14 @@ type ChatMessage = {
 
 type RequestBody = {
   messages?: ChatMessage[];
+  summary?: string;
 };
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+const REQUEST_TIMEOUT_MS = 15000;
+const MAX_RETRIES = 1;
+const SUMMARY_CHAR_LIMIT = 1000;
 const STYLE_SYSTEM_PROMPT =
   "You are a classroom AI tutor. Write clear, student-friendly answers. Use short sections, simple bullets, and concise steps. Avoid long walls of text. Use plain text; no markdown tables unless explicitly requested.";
 
@@ -72,6 +76,46 @@ function extractReplyFromChoice(choice: unknown): string {
   return "";
 }
 
+function shouldRetry(status: number) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+async function fetchWithTimeoutAndRetry(url: string, init: RequestInit) {
+  let lastError: Error | null = null;
+  let lastResponse: Response | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        ...init,
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (response.ok || attempt === MAX_RETRIES || !shouldRetry(response.status)) {
+        return response;
+      }
+
+      lastResponse = response;
+    } catch (error) {
+      clearTimeout(timeout);
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt === MAX_RETRIES) {
+        throw lastError;
+      }
+    }
+  }
+
+  if (lastResponse) {
+    return lastResponse;
+  }
+
+  throw lastError ?? new Error("OpenRouter request failed");
+}
+
 export async function POST(request: Request) {
   const apiKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
   if (!apiKey) {
@@ -86,6 +130,7 @@ export async function POST(request: Request) {
   }
 
   const incomingMessages = Array.isArray(body.messages) ? body.messages : [];
+  const summary = typeof body.summary === "string" ? body.summary.trim().slice(0, SUMMARY_CHAR_LIMIT) : "";
   const validMessages = incomingMessages
     .filter((message) => (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
     .map((message) => ({
@@ -99,7 +144,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const upstreamResponse = await fetch(OPENROUTER_URL, {
+    const upstreamResponse = await fetchWithTimeoutAndRetry(OPENROUTER_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -109,6 +154,7 @@ export async function POST(request: Request) {
         model: MODEL,
         messages: [
           { role: "system", content: STYLE_SYSTEM_PROMPT },
+          ...(summary ? [{ role: "system", content: `Conversation summary:\n${summary}` }] : []),
           ...validMessages
         ]
       })
