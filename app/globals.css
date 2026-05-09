@@ -1366,6 +1366,33 @@ h1 {
   min-height: 0;
 }
 
+.room-ai-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.room-ai-chat-header p {
+  margin: 0;
+}
+
+.room-ai-chat-header button,
+.room-ai-chat-actions button {
+  min-height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9px;
+  color: #fff0d4;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+
+.room-ai-chat-header button {
+  padding: 0 9px;
+}
+
 .room-ai-chat-thread {
   display: grid;
   align-content: start;
@@ -1447,6 +1474,58 @@ h1 {
   color: #ffe7be;
 }
 
+.room-ai-chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.room-ai-chat-actions button {
+  padding: 0 8px;
+}
+
+.room-ai-chat-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.room-ai-typing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 18px;
+}
+
+.room-ai-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ffe7be;
+  animation: room-ai-typing-pulse 900ms ease-in-out infinite;
+}
+
+.room-ai-typing span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.room-ai-typing span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@keyframes room-ai-typing-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
 .room-ai-chat-code-head {
   margin: 0 0 6px;
   color: #f2f5ff;
@@ -1469,6 +1548,32 @@ h1 {
 
 .room-ai-chat-code-card pre {
   color: #f6f8ff;
+}
+
+
+.room-ai-chat-text {
+  display: grid;
+  gap: 6px;
+}
+
+.room-ai-chat-line {
+  margin: 0;
+  color: #ffe7be;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  text-shadow: none;
+}
+
+.room-ai-chat-line.heading {
+  margin-top: 2px;
+  color: #fff1d3;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.room-ai-chat-line.numbered {
+  font-weight: 700;
 }
 
 .room-ai-chat-error {

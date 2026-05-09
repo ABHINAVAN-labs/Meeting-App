@@ -11,6 +11,8 @@ type RequestBody = {
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+const STYLE_SYSTEM_PROMPT =
+  "You are a classroom AI tutor. Write clear, student-friendly answers. Use short sections, simple bullets, and concise steps. Avoid long walls of text. Use plain text; no markdown tables unless explicitly requested.";
 
 function extractReplyContent(raw: unknown): string {
   if (typeof raw === "string") {
@@ -39,6 +41,32 @@ function extractReplyContent(raw: unknown): string {
       .trim();
 
     return combined;
+  }
+
+  return "";
+}
+
+function extractReplyFromChoice(choice: unknown): string {
+  if (!choice || typeof choice !== "object") {
+    return "";
+  }
+
+  const record = choice as Record<string, unknown>;
+  const message = (record.message ?? {}) as Record<string, unknown>;
+
+  const fromMessageContent = extractReplyContent(message.content);
+  if (fromMessageContent) {
+    return fromMessageContent;
+  }
+
+  const fromMessageReasoning = extractReplyContent(message.reasoning);
+  if (fromMessageReasoning) {
+    return fromMessageReasoning;
+  }
+
+  const fromChoiceText = extractReplyContent(record.text);
+  if (fromChoiceText) {
+    return fromChoiceText;
   }
 
   return "";
@@ -79,7 +107,10 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: validMessages
+        messages: [
+          { role: "system", content: STYLE_SYSTEM_PROMPT },
+          ...validMessages
+        ]
       })
     });
 
@@ -92,13 +123,20 @@ export async function POST(request: Request) {
     }
 
     const upstreamJson = (await upstreamResponse.json()) as {
-      choices?: Array<{ message?: { content?: unknown }; text?: unknown }>;
+      choices?: unknown[];
+      output_text?: unknown;
+      response?: unknown;
     };
     const firstChoice = upstreamJson.choices?.[0];
-    const reply = extractReplyContent(firstChoice?.message?.content) || extractReplyContent(firstChoice?.text);
+    const reply =
+      extractReplyFromChoice(firstChoice) ||
+      extractReplyContent(upstreamJson.output_text) ||
+      extractReplyContent(upstreamJson.response);
 
     if (!reply) {
-      return NextResponse.json({ error: "No assistant response received" }, { status: 502 });
+      return NextResponse.json({
+        reply: "I could not generate a complete response just now. Please resend your question."
+      });
     }
 
     return NextResponse.json({ reply });
