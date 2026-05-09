@@ -8,6 +8,7 @@ type ChatMessage = {
 type RequestBody = {
   messages?: ChatMessage[];
   summary?: string;
+  verbosity?: "short" | "normal" | "detailed";
 };
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -16,7 +17,17 @@ const REQUEST_TIMEOUT_MS = 15000;
 const MAX_RETRIES = 1;
 const SUMMARY_CHAR_LIMIT = 1000;
 const STYLE_SYSTEM_PROMPT =
-  "You are a classroom AI tutor. Write clear, student-friendly answers. Use short sections, simple bullets, and concise steps. Avoid long walls of text. Use plain text; no markdown tables unless explicitly requested.";
+  "You are a classroom AI tutor. Write clear, student-friendly answers. Use short sections, simple bullets, and concise steps. Avoid long walls of text. When you present tabular data, always use strict GitHub-Flavored Markdown table syntax: include header row, delimiter row with at least three hyphens per column, and data rows; every row must start and end with pipe characters; do not use ASCII box-drawing, plus-dash tables, or space-aligned plain-text columns.";
+
+function getVerbosityPrompt(verbosity: RequestBody["verbosity"]) {
+  if (verbosity === "short") {
+    return "Keep the answer concise: 3-6 lines unless the user asks for more detail.";
+  }
+  if (verbosity === "detailed") {
+    return "Give a fuller explanation with clear steps and one compact example when helpful.";
+  }
+  return "Keep a balanced explanation: clear and moderately detailed.";
+}
 
 function extractReplyContent(raw: unknown): string {
   if (typeof raw === "string") {
@@ -131,6 +142,8 @@ export async function POST(request: Request) {
 
   const incomingMessages = Array.isArray(body.messages) ? body.messages : [];
   const summary = typeof body.summary === "string" ? body.summary.trim().slice(0, SUMMARY_CHAR_LIMIT) : "";
+  const verbosity: RequestBody["verbosity"] =
+    body.verbosity === "short" || body.verbosity === "normal" || body.verbosity === "detailed" ? body.verbosity : "normal";
   const validMessages = incomingMessages
     .filter((message) => (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
     .map((message) => ({
@@ -154,6 +167,7 @@ export async function POST(request: Request) {
         model: MODEL,
         messages: [
           { role: "system", content: STYLE_SYSTEM_PROMPT },
+          { role: "system", content: getVerbosityPrompt(verbosity) },
           ...(summary ? [{ role: "system", content: `Conversation summary:\n${summary}` }] : []),
           ...validMessages
         ]
