@@ -25,6 +25,9 @@ Implemented:
   - tab-scoped participant identity using `sessionStorage`
   - avoids same-browser-tab session collision issues
 - Improved room stability:
+  - pure LiveKit architecture (all legacy dual/fallback WebRTC signaling removed)
+  - React Strict Mode connection locks to prevent duplicate concurrent WebRTC sessions
+  - intelligent remote track synchronization to prevent "Connected without video" black tiles
   - graceful fallback when camera/mic device is unavailable
   - reconnect-aware UI state
   - suppression of known benign LiveKit dev-noise logs
@@ -183,7 +186,6 @@ Checklist:
 
 ## Next Improvements (Planned)
 
-- Replace remaining legacy signaling paths with a single LiveKit-only path.
 - Persistent room state backend (Redis/Postgres) instead of in-memory store.
 - TURN/SFU quality tuning profiles for classroom scale.
 - Better in-app diagnostics UI for media/network states.
