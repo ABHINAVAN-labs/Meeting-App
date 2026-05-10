@@ -744,6 +744,10 @@ export default function MeetingRoomPage() {
     return Boolean(publication?.track && !publication.isMuted);
   }
 
+  function canPublishLocalTracks(room: Room) {
+    return room.state === ConnectionState.Connected;
+  }
+
   function updateMediaPrefs(nextCameraEnabled = cameraEnabledRef.current, nextMicEnabled = micEnabledRef.current) {
     cameraEnabledRef.current = nextCameraEnabled;
     micEnabledRef.current = nextMicEnabled;
@@ -1022,10 +1026,10 @@ export default function MeetingRoomPage() {
       let micOn = micEnabledRef.current;
 
       try {
-        if (cameraOn && !hasActiveLocalTrack(room, Track.Kind.Video)) {
+        if (cameraOn && canPublishLocalTracks(room) && !hasActiveLocalTrack(room, Track.Kind.Video)) {
           await room.localParticipant.setCameraEnabled(true);
         }
-        if (!cameraOn && hasActiveLocalTrack(room, Track.Kind.Video)) {
+        if (!cameraOn && canPublishLocalTracks(room) && hasActiveLocalTrack(room, Track.Kind.Video)) {
           await room.localParticipant.setCameraEnabled(false);
         }
         await attachLocalVideo(room);
@@ -1040,10 +1044,10 @@ export default function MeetingRoomPage() {
       }
 
       try {
-        if (micOn && !hasActiveLocalTrack(room, Track.Kind.Audio)) {
+        if (micOn && canPublishLocalTracks(room) && !hasActiveLocalTrack(room, Track.Kind.Audio)) {
           await room.localParticipant.setMicrophoneEnabled(true);
         }
-        if (!micOn && hasActiveLocalTrack(room, Track.Kind.Audio)) {
+        if (!micOn && canPublishLocalTracks(room) && hasActiveLocalTrack(room, Track.Kind.Audio)) {
           await room.localParticipant.setMicrophoneEnabled(false);
         }
       } catch (error) {
@@ -1130,7 +1134,7 @@ export default function MeetingRoomPage() {
     const next = !cameraEnabled;
 
     updateMediaPrefs(next, micEnabled);
-    if (!room) {
+    if (!room || !canPublishLocalTracks(room)) {
       if (next) {
         setCameraEnabled(await startLocalPreviewCamera());
       } else {
@@ -1259,7 +1263,7 @@ export default function MeetingRoomPage() {
     const next = !micEnabled;
 
     updateMediaPrefs(cameraEnabled, next);
-    if (!room) {
+    if (!room || !canPublishLocalTracks(room)) {
       const micOn = next ? await startLocalPreviewMic() : false;
       if (!next) {
         stopLocalPreviewMic();
