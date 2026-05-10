@@ -231,7 +231,7 @@ function RemoteVideo({ publication, stream }: { publication?: RemoteTrackPublica
     return () => {
       track.detach(node);
     };
-  }, [publication, stream]);
+  }, [publication?.videoTrack, stream]);
 
   return <video ref={videoRef} autoPlay playsInline suppressHydrationWarning />;
 }
@@ -275,7 +275,7 @@ function RemoteAudio({ publication }: { publication?: RemoteTrackPublication }) 
     return () => {
       track.detach(node);
     };
-  }, [publication]);
+  }, [publication?.audioTrack]);
 
   return <audio ref={audioRef} autoPlay />;
 }
@@ -349,13 +349,12 @@ export default function MeetingRoomPage() {
     onend: (() => void) | null;
   } | null>(null);
   const isLeavingRef = useRef(false);
+  const isConnectingRef = useRef(false);
   const roomRef = useRef<Room | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const localPreviewStreamRef = useRef<MediaStream | null>(null);
   const cameraEnabledRef = useRef(false);
   const micEnabledRef = useRef(false);
-  const fallbackPeersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const fallbackParticipantsRef = useRef<Map<string, ActiveParticipant>>(new Map());
   const removedParticipantIdsRef = useRef<Set<string>>(new Set());
   const hasBeenRemovedRef = useRef(false);
   const aiMessagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -692,12 +691,13 @@ export default function MeetingRoomPage() {
   }, []);
 
   function mapParticipant(participant: RemoteParticipant): RemoteTile {
-    const videoPub = [...participant.trackPublications.values()].find(
-      (pub) => pub.kind === Track.Kind.Video
-    ) as RemoteTrackPublication | undefined;
-    const audioPub = [...participant.trackPublications.values()].find(
-      (pub) => pub.kind === Track.Kind.Audio
-    ) as RemoteTrackPublication | undefined;
+    const pubs = [...participant.trackPublications.values()] as RemoteTrackPublication[];
+    
+    const videoPubs = pubs.filter((pub) => pub.kind === Track.Kind.Video);
+    const videoPub = videoPubs.find((pub) => pub.isSubscribed && pub.videoTrack) ?? videoPubs[0];
+
+    const audioPubs = pubs.filter((pub) => pub.kind === Track.Kind.Audio);
+    const audioPub = audioPubs.find((pub) => pub.isSubscribed && pub.audioTrack) ?? audioPubs[0];
 
     let role = "student";
     if (participant.metadata) {
@@ -726,9 +726,9 @@ export default function MeetingRoomPage() {
   }
 
   async function attachLocalVideo(room: Room) {
-    const publication = [...room.localParticipant.trackPublications.values()].find(
-      (pub) => pub.kind === Track.Kind.Video
-    ) as LocalTrackPublication | undefined;
+    const pubs = [...room.localParticipant.trackPublications.values()] as LocalTrackPublication[];
+    const videoPubs = pubs.filter((pub) => pub.kind === Track.Kind.Video);
+    const publication = videoPubs.find((pub) => pub.track) ?? videoPubs[0];
 
     const localTrack = publication?.videoTrack;
     if (localTrack && localVideoRef.current) {
@@ -737,9 +737,9 @@ export default function MeetingRoomPage() {
   }
 
   function hasActiveLocalTrack(room: Room, kind: Track.Kind) {
-    const publication = [...room.localParticipant.trackPublications.values()].find(
-      (pub) => pub.kind === kind
-    ) as LocalTrackPublication | undefined;
+    const pubs = [...room.localParticipant.trackPublications.values()] as LocalTrackPublication[];
+    const typePubs = pubs.filter((pub) => pub.kind === kind);
+    const publication = typePubs.find((pub) => pub.track && !pub.isMuted) ?? typePubs[0];
 
     return Boolean(publication?.track && !publication.isMuted);
   }
@@ -762,171 +762,12 @@ export default function MeetingRoomPage() {
     }
   }
 
-  async function sendFallbackSignal(
-    toParticipantId: string,
-    signalType: "offer" | "answer" | "ice-candidate",
-    signal: RTCSessionDescriptionInit | RTCIceCandidateInit
-  ) {
-    await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/signal`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ toParticipantId, signalType, signal })
-    }).catch(() => undefined);
-  }
-
-  function getLocalRoomTrack(kind: Track.Kind) {
-    const room = roomRef.current;
-    if (!room) {
-      return null;
-    }
-
-    const publication = [...room.localParticipant.trackPublications.values()].find(
-      (pub) => pub.kind === kind
-    ) as LocalTrackPublication | undefined;
-
-    return (
-      (publication?.track as unknown as { mediaStreamTrack?: MediaStreamTrack } | undefined)?.mediaStreamTrack ??
-      null
-    );
-  }
-
-  function syncLocalTracksToFallbackPeer(peer: RTCPeerConnection, nextCameraEnabled = cameraEnabled, nextMicEnabled = micEnabled) {
-    const roomVideoTrack = nextCameraEnabled ? getLocalRoomTrack(Track.Kind.Video) : null;
-    const roomAudioTrack = nextMicEnabled ? getLocalRoomTrack(Track.Kind.Audio) : null;
-    const previewStream = localPreviewStreamRef.current;
-    const videoTrack = roomVideoTrack ?? (nextCameraEnabled ? previewStream?.getVideoTracks()[0] : null);
-    const audioTrack = roomAudioTrack ?? (nextMicEnabled ? previewStream?.getAudioTracks()[0] : null);
-    const stream = new MediaStream([videoTrack, audioTrack].filter(Boolean) as MediaStreamTrack[]);
-
-    for (const sender of peer.getSenders()) {
-      if (sender.track?.kind === "video" && sender.track !== videoTrack) {
-        peer.removeTrack(sender);
-      }
-      if (sender.track?.kind === "audio" && sender.track !== audioTrack) {
-        peer.removeTrack(sender);
-      }
-    }
-
-    if (videoTrack) {
-      videoTrack.enabled = nextCameraEnabled;
-    }
-    if (audioTrack) {
-      audioTrack.enabled = nextMicEnabled;
-    }
-
-    if (!stream) {
-      return;
-    }
-
-    for (const track of stream.getTracks()) {
-      const alreadyAdded = peer.getSenders().some((sender) => sender.track === track);
-      if (!alreadyAdded) {
-        peer.addTrack(track, stream);
-      }
-    }
-  }
-
-  async function ensureFallbackPeer(participant: ActiveParticipant) {
-    if (!participantIdRef.current || participant.id === participantIdRef.current || participant.status !== "active") {
-      return null;
-    }
-
-    fallbackParticipantsRef.current.set(participant.id, participant);
-    const existing = fallbackPeersRef.current.get(participant.id);
-    if (existing) {
-      syncLocalTracksToFallbackPeer(existing);
-      return existing;
-    }
-
-    const peer = new RTCPeerConnection();
-    fallbackPeersRef.current.set(participant.id, peer);
-    peer.addTransceiver("video", { direction: "recvonly" });
-    peer.addTransceiver("audio", { direction: "recvonly" });
-    syncLocalTracksToFallbackPeer(peer);
-
-    peer.onicecandidate = (event) => {
-      if (event.candidate) {
-        sendFallbackSignal(participant.id, "ice-candidate", event.candidate);
-      }
-    };
-
-    peer.ontrack = (event) => {
-      const stream = event.streams[0];
-      if (!stream) {
-        return;
-      }
-
-      setRemoteParticipants((prev) => {
-        const filtered = prev.filter((tile) => tile.id !== participant.id);
-        return [
-          ...filtered,
-          {
-            id: participant.id,
-            name: participant.displayName,
-            role: participant.role,
-            stream
-          }
-        ];
-      });
-    };
-
-    peer.onnegotiationneeded = async () => {
-      const isConnectedPeer = peer.connectionState === "connected" || peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed";
-      if (!participantIdRef.current || (!isConnectedPeer && participantIdRef.current > participant.id) || peer.signalingState !== "stable") {
-        return;
-      }
-
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      await sendFallbackSignal(participant.id, "offer", offer);
-    };
-
-    return peer;
-  }
-
-  function closeFallbackPeer(participantId: string) {
-    fallbackPeersRef.current.get(participantId)?.close();
-    fallbackPeersRef.current.delete(participantId);
-    fallbackParticipantsRef.current.delete(participantId);
-    setRemoteParticipants((prev) => prev.filter((tile) => tile.id !== participantId));
-  }
-
-  async function handleFallbackSignal(event: {
-    fromParticipantId: string;
-    signalType: "offer" | "answer" | "ice-candidate";
-    signal: RTCSessionDescriptionInit | RTCIceCandidateInit;
-  }) {
-    const participant = fallbackParticipantsRef.current.get(event.fromParticipantId);
-    if (!participant) {
-      return;
-    }
-
-    const peer = await ensureFallbackPeer(participant);
-    if (!peer) {
-      return;
-    }
-
-    if (event.signalType === "ice-candidate") {
-      await peer.addIceCandidate(event.signal as RTCIceCandidateInit).catch(() => undefined);
-      return;
-    }
-
-    if (event.signalType === "offer") {
-      await peer.setRemoteDescription(event.signal as RTCSessionDescriptionInit);
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
-      await sendFallbackSignal(event.fromParticipantId, "answer", answer);
-      return;
-    }
-
-    await peer.setRemoteDescription(event.signal as RTCSessionDescriptionInit);
-  }
-
   async function connectRoom() {
-    if (!readableMeetingCode || roomRef.current) {
+    if (!readableMeetingCode || roomRef.current || isConnectingRef.current) {
       return;
     }
 
+    isConnectingRef.current = true;
     isLeavingRef.current = false;
     const connectAttempt = ++connectAttemptRef.current;
     setCameraStatus("requesting");
@@ -962,6 +803,7 @@ export default function MeetingRoomPage() {
       const payload = (await tokenResponse.json().catch(() => ({}))) as { message?: string };
       setAccessError(payload.message ?? "Could not authorize room access.");
       setCameraStatus("blocked");
+      isConnectingRef.current = false;
       return;
     }
 
@@ -981,6 +823,7 @@ export default function MeetingRoomPage() {
     if (!url.startsWith("wss://") && !url.startsWith("ws://")) {
       setAccessError("LiveKit URL must start with wss:// (or ws:// for local dev).");
       setCameraStatus("blocked");
+      isConnectingRef.current = false;
       return;
     }
 
@@ -1007,8 +850,12 @@ export default function MeetingRoomPage() {
       })
       .on(RoomEvent.ParticipantConnected, () => refreshRemoteParticipants(room))
       .on(RoomEvent.ParticipantDisconnected, () => refreshRemoteParticipants(room))
+      .on(RoomEvent.TrackPublished, () => refreshRemoteParticipants(room))
+      .on(RoomEvent.TrackUnpublished, () => refreshRemoteParticipants(room))
       .on(RoomEvent.TrackSubscribed, () => refreshRemoteParticipants(room))
-      .on(RoomEvent.TrackUnsubscribed, () => refreshRemoteParticipants(room));
+      .on(RoomEvent.TrackUnsubscribed, () => refreshRemoteParticipants(room))
+      .on(RoomEvent.TrackMuted, () => refreshRemoteParticipants(room))
+      .on(RoomEvent.TrackUnmuted, () => refreshRemoteParticipants(room));
 
     try {
       if (!token || !token.includes(".")) {
@@ -1063,9 +910,6 @@ export default function MeetingRoomPage() {
       updateMediaPrefs(cameraOn, micOn);
       setCameraEnabled(cameraOn);
       setMicEnabled(micOn);
-      for (const peer of fallbackPeersRef.current.values()) {
-        syncLocalTracksToFallbackPeer(peer, cameraOn, micOn);
-      }
       setCameraStatus("active");
       if (!cameraOn && !micOn) {
         setAccessError("Connected, but no camera/mic device found. You can still stay in the room.");
@@ -1100,6 +944,8 @@ export default function MeetingRoomPage() {
       setCameraStatus("blocked");
       room.disconnect();
       roomRef.current = null;
+    } finally {
+      isConnectingRef.current = false;
     }
   }
 
@@ -1162,9 +1008,6 @@ export default function MeetingRoomPage() {
 
     updateMediaPrefs(cameraOn, micEnabled);
     setCameraEnabled(cameraOn);
-    for (const peer of fallbackPeersRef.current.values()) {
-      syncLocalTracksToFallbackPeer(peer, cameraOn, micEnabled);
-    }
   }
 
   async function startLocalPreviewCamera() {
@@ -1174,9 +1017,6 @@ export default function MeetingRoomPage() {
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = localPreviewStreamRef.current;
         await localVideoRef.current.play().catch(() => undefined);
-      }
-      for (const peer of fallbackPeersRef.current.values()) {
-        syncLocalTracksToFallbackPeer(peer);
       }
       return true;
     }
@@ -1192,9 +1032,6 @@ export default function MeetingRoomPage() {
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = currentStream;
         await localVideoRef.current.play().catch(() => undefined);
-      }
-      for (const peer of fallbackPeersRef.current.values()) {
-        syncLocalTracksToFallbackPeer(peer);
       }
       setAccessError("");
       return true;
@@ -1222,9 +1059,6 @@ export default function MeetingRoomPage() {
     const existingAudio = localPreviewStreamRef.current?.getAudioTracks()[0];
     if (existingAudio) {
       existingAudio.enabled = true;
-      for (const peer of fallbackPeersRef.current.values()) {
-        syncLocalTracksToFallbackPeer(peer, cameraEnabledRef.current, true);
-      }
       return true;
     }
 
@@ -1235,9 +1069,6 @@ export default function MeetingRoomPage() {
         const currentStream = localPreviewStreamRef.current ?? new MediaStream();
         currentStream.addTrack(audioTrack);
         localPreviewStreamRef.current = currentStream;
-      }
-      for (const peer of fallbackPeersRef.current.values()) {
-        syncLocalTracksToFallbackPeer(peer, cameraEnabledRef.current, true);
       }
       setAccessError("");
       return Boolean(audioTrack);
@@ -1293,9 +1124,6 @@ export default function MeetingRoomPage() {
 
     updateMediaPrefs(cameraEnabled, micOn);
     setMicEnabled(micOn);
-    for (const peer of fallbackPeersRef.current.values()) {
-      syncLocalTracksToFallbackPeer(peer, cameraEnabled, micOn);
-    }
   }
 
   useEffect(() => {
@@ -1351,46 +1179,32 @@ export default function MeetingRoomPage() {
 
       if (event.type === "snapshot") {
         participantIdRef.current = event.sessionParticipantId;
-        for (const participant of event.participants.filter((item) => item.status === "active")) {
-          if (participant.id !== event.sessionParticipantId) {
-            ensureFallbackPeer(participant);
-          }
-        }
         return;
       }
 
       if (event.type === "participant-joined" && event.participant.status === "active") {
-        ensureFallbackPeer(event.participant);
         return;
       }
 
       if (event.type === "participant-status-updated" && event.status !== "active") {
-        closeFallbackPeer(event.participantId);
         return;
       }
 
       if (event.type === "participant-left") {
-        closeFallbackPeer(event.participantId);
         return;
       }
 
       if (event.type === "signal") {
-        handleFallbackSignal(event);
+        // Fallback WebRTC is disabled
       }
     };
 
     return () => {
       events.close();
-      for (const participantId of fallbackPeersRef.current.keys()) {
-        closeFallbackPeer(participantId);
-      }
     };
   }, [readableMeetingCode]);
 
   useEffect(() => {
-    for (const participant of activeStudents) {
-      ensureFallbackPeer(participant);
-    }
   }, [activeStudents]);
 
   useEffect(() => {
@@ -1527,7 +1341,6 @@ export default function MeetingRoomPage() {
     setActiveStudents((prev) => prev.filter((participant) => participant.id !== participantId));
     setRaisedHands((prev) => prev.filter((participant) => participant.id !== participantId));
     setRemoteParticipants((prev) => prev.filter((participant) => participant.id !== participantId));
-    closeFallbackPeer(participantId);
   }
 
   async function copyMeetingLink() {
