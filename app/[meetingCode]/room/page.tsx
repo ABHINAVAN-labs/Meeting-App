@@ -60,6 +60,12 @@ type MeetingChatMessage = {
   content: string;
   sentAt: number;
 };
+type HostControls = {
+  muteAllRequestId: number;
+  forceStudentCamerasOn: boolean;
+  vivaTimeEnabled: boolean;
+  meetingChatEnabled: boolean;
+};
 
 function cleanAiDisplayText(content: string) {
   return content
@@ -158,6 +164,12 @@ const AI_CHAT_VERBOSITY_STORAGE_PREFIX = "meeting_ai_verbosity_";
 const AI_RECENT_MESSAGE_LIMIT = 12;
 const AI_SUMMARY_CHAR_LIMIT = 900;
 const AI_REPLY_RENDER_CHAR_LIMIT = 5000;
+const DEFAULT_HOST_CONTROLS: HostControls = {
+  muteAllRequestId: 0,
+  forceStudentCamerasOn: false,
+  vivaTimeEnabled: false,
+  meetingChatEnabled: false
+};
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
@@ -177,6 +189,32 @@ function aiChatVerbosityKey(meetingCode: string) {
 
 function createChatMessageId(role: AiChatMessage["role"]) {
   return `${Date.now()}-${role}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function playJoinRequestNotificationSound() {
+  try {
+    const audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const startTime = audioContext.currentTime;
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, startTime);
+    oscillator.frequency.exponentialRampToValueAtTime(1320, startTime + 0.14);
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.22, startTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.24);
+
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start(startTime);
+    oscillator.stop(startTime + 0.25);
+    oscillator.onended = () => {
+      void audioContext.close();
+    };
+  } catch {
+    // Notification sound is best-effort.
+  }
 }
 
 function capAiReplyContent(content: string) {
@@ -329,6 +367,7 @@ export default function MeetingRoomPage() {
   const [meetingChatInput, setMeetingChatInput] = useState("");
   const [meetingChatSending, setMeetingChatSending] = useState(false);
   const [meetingChatError, setMeetingChatError] = useState("");
+  const [hostControls, setHostControls] = useState<HostControls>(DEFAULT_HOST_CONTROLS);
 
   const participantIdRef = useRef("");
   const selfRoleRef = useRef<ParticipantRole | null>(null);
@@ -359,6 +398,8 @@ export default function MeetingRoomPage() {
   const hasBeenRemovedRef = useRef(false);
   const aiMessagesEndRef = useRef<HTMLDivElement | null>(null);
   const meetingChatEndRef = useRef<HTMLDivElement | null>(null);
+  const previousPendingParticipantsCountRef = useRef(0);
+  const lastAppliedMuteAllRequestIdRef = useRef(0);
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -456,6 +497,10 @@ export default function MeetingRoomPage() {
     if (!content || meetingChatSending) {
       return;
     }
+    if (selfRole === "student" && !hostControls.meetingChatEnabled) {
+      setMeetingChatError("Meeting Chat disabled.");
+      return;
+    }
 
     setMeetingChatSending(true);
     setMeetingChatError("");
@@ -492,6 +537,10 @@ export default function MeetingRoomPage() {
     if (!userText || aiSending || aiCooldownUntil > Date.now()) {
       return;
     }
+    if (selfRole === "student" && hostControls.vivaTimeEnabled) {
+      setAiError("AI Chat has been Disabled.");
+      return;
+    }
 
     const userMessage: AiChatMessage = {
       id: createChatMessageId("user"),
@@ -520,6 +569,7 @@ export default function MeetingRoomPage() {
           ...(participantIdRef.current ? { "x-participant-id": participantIdRef.current } : {})
         },
         body: JSON.stringify({
+          meetingCode: readableMeetingCode,
           summary,
           verbosity: aiVerbosity,
           messages: recentMessages.map((message) => ({
@@ -976,6 +1026,10 @@ export default function MeetingRoomPage() {
   }
 
   async function toggleCamera() {
+    if (selfRole === "student" && hostControls.forceStudentCamerasOn) {
+      return;
+    }
+
     const room = roomRef.current;
     const next = !cameraEnabled;
 
@@ -1000,6 +1054,31 @@ export default function MeetingRoomPage() {
       } else {
         stopLocalPreviewCamera();
       }
+      const details = formatUnknownError(error);
+      if (!details.message.includes("Abort handler called")) {
+        setAccessError(`Camera unavailable: ${details.message}`);
+      }
+    }
+
+    updateMediaPrefs(cameraOn, micEnabled);
+    setCameraEnabled(cameraOn);
+  }
+
+  async function turnCameraOnFromHostControl() {
+    const room = roomRef.current;
+
+    updateMediaPrefs(true, micEnabled);
+    if (!room || !canPublishLocalTracks(room)) {
+      setCameraEnabled(await startLocalPreviewCamera());
+      return;
+    }
+
+    let cameraOn = true;
+    try {
+      await room.localParticipant.setCameraEnabled(true);
+      await attachLocalVideo(room);
+    } catch (error) {
+      cameraOn = await startLocalPreviewCamera();
       const details = formatUnknownError(error);
       if (!details.message.includes("Abort handler called")) {
         setAccessError(`Camera unavailable: ${details.message}`);
@@ -1208,6 +1287,36 @@ export default function MeetingRoomPage() {
   }, [activeStudents]);
 
   useEffect(() => {
+    if (selfRole === "teacher" && previousPendingParticipantsCountRef.current === 0 && pendingParticipants.length > 0) {
+      playJoinRequestNotificationSound();
+    }
+
+    previousPendingParticipantsCountRef.current = pendingParticipants.length;
+  }, [pendingParticipants.length, selfRole]);
+
+  useEffect(() => {
+    if (selfRole !== "student") {
+      lastAppliedMuteAllRequestIdRef.current = hostControls.muteAllRequestId;
+      return;
+    }
+
+    if (hostControls.muteAllRequestId > lastAppliedMuteAllRequestIdRef.current) {
+      lastAppliedMuteAllRequestIdRef.current = hostControls.muteAllRequestId;
+      if (micEnabled) {
+        void toggleMic();
+      }
+    }
+
+    if (hostControls.forceStudentCamerasOn && !cameraEnabled) {
+      void turnCameraOnFromHostControl();
+    }
+
+    if (hostControls.vivaTimeEnabled && aiSending) {
+      cancelAiRequest();
+    }
+  }, [aiSending, cameraEnabled, hostControls.forceStudentCamerasOn, hostControls.muteAllRequestId, hostControls.vivaTimeEnabled, micEnabled, selfRole]);
+
+  useEffect(() => {
     if (!readableMeetingCode) {
       return;
     }
@@ -1228,6 +1337,7 @@ export default function MeetingRoomPage() {
         } | null;
         participants?: ActiveParticipant[];
         pendingParticipants?: PendingParticipant[];
+        hostControls?: HostControls;
         meetingChatMessages?: MeetingChatMessage[];
       };
 
@@ -1261,6 +1371,7 @@ export default function MeetingRoomPage() {
         (participant) => participant.role === "student" && participant.status === "active"
       );
       setActiveStudents(students);
+      setHostControls(payload.hostControls ?? DEFAULT_HOST_CONTROLS);
       setMeetingChatMessages(payload.meetingChatMessages ?? []);
 
       if (serverRole === "teacher") {
@@ -1359,11 +1470,33 @@ export default function MeetingRoomPage() {
     }
   }
 
+  async function updateHostControls(updates: Partial<Pick<HostControls, "forceStudentCamerasOn" | "vivaTimeEnabled" | "meetingChatEnabled">> & { muteAll?: boolean }) {
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/host-controls`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(actorParticipantId ? { "x-participant-id": actorParticipantId } : {})
+      },
+      body: JSON.stringify(updates)
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as { hostControls?: HostControls; message?: string };
+    if (!response.ok || !payload.hostControls) {
+      setAccessError(payload.message ?? "Could not update host controls.");
+      return;
+    }
+
+    setHostControls(payload.hostControls);
+  }
+
   const teacherRemote = remoteParticipants.find((participant) => participant.role === "teacher");
   const studentRemotes = remoteParticipants.filter((participant) => participant.role !== "teacher");
   const latestRaisedHand = raisedHands[raisedHands.length - 1];
   const additionalRaisedHandsCount = Math.max(0, raisedHands.length - 1);
   const clockLabel = `${clockNow.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${clockNow.toLocaleDateString([], { weekday: "short" })}`;
+  const isStudentAiChatDisabled = selfRole === "student" && hostControls.vivaTimeEnabled;
+  const isStudentMeetingChatDisabled = selfRole === "student" && !hostControls.meetingChatEnabled;
 
   return (
     <main className="entry-shell room-shell">
@@ -1544,10 +1677,10 @@ export default function MeetingRoomPage() {
                       <button type="button" onClick={() => void copyAiMessage(message)}>
                         {aiCopiedMessageId === message.id ? "Copied" : "Copy"}
                       </button>
-                      <button type="button" disabled={aiCooldownSeconds > 0 || aiSending} onClick={() => void sendAiMessage("Explain your previous answer more simply.")}>
+                      <button type="button" disabled={isStudentAiChatDisabled || aiCooldownSeconds > 0 || aiSending} onClick={() => void sendAiMessage("Explain your previous answer more simply.")}>
                         Simpler
                       </button>
-                      <button type="button" disabled={aiCooldownSeconds > 0 || aiSending} onClick={() => void sendAiMessage("Give me a short example for your previous answer.")}>
+                      <button type="button" disabled={isStudentAiChatDisabled || aiCooldownSeconds > 0 || aiSending} onClick={() => void sendAiMessage("Give me a short example for your previous answer.")}>
                         Example
                       </button>
                     </div>
@@ -1587,44 +1720,50 @@ export default function MeetingRoomPage() {
               }}
             >
               <div className="room-ai-chat-input-wrap">
-                <input
-                  type="text"
-                  value={aiInput}
-                  onChange={(event) => setAiInput(event.target.value)}
-                  placeholder="Type your message..."
-                  aria-label="Type a message for AI chat"
-                />
-                <div className="room-ai-chat-input-icons">
-                  <button
-                    type="button"
-                    className={`room-ai-chat-inline-icon mic ${aiMicListening ? "active" : ""}`}
-                    aria-label={aiMicListening ? "Stop microphone input" : "Use microphone input"}
-                    onClick={toggleAiMicInput}
-                    disabled={aiSending}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 14.5c1.7 0 3-1.3 3-3V6c0-1.7-1.3-3-3-3S9 4.3 9 6v5.5c0 1.7 1.3 3 3 3Z" />
-                      <path d="M18 11.5c0 3.1-2.4 5.5-6 5.5s-6-2.4-6-5.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-                      <path d="M12 17v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-                      <path d="M9 21h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-                    </svg>
-                  </button>
-                  {aiSending ? (
-                    <button
-                      type="button"
-                      className="room-ai-chat-inline-icon stop"
-                      aria-label="Cancel AI request"
-                      onClick={cancelAiRequest}
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="8" y="8" width="8" height="8" rx="1.6" />
-                      </svg>
-                    </button>
-                  ) : null}
-                </div>
+                {isStudentAiChatDisabled ? (
+                  <div className="room-ai-chat-disabled">AI Chat has been Disabled.</div>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      value={aiInput}
+                      onChange={(event) => setAiInput(event.target.value)}
+                      placeholder="Type your message..."
+                      aria-label="Type a message for AI chat"
+                    />
+                    <div className="room-ai-chat-input-icons">
+                      <button
+                        type="button"
+                        className={`room-ai-chat-inline-icon mic ${aiMicListening ? "active" : ""}`}
+                        aria-label={aiMicListening ? "Stop microphone input" : "Use microphone input"}
+                        onClick={toggleAiMicInput}
+                        disabled={aiSending}
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M12 14.5c1.7 0 3-1.3 3-3V6c0-1.7-1.3-3-3-3S9 4.3 9 6v5.5c0 1.7 1.3 3 3 3Z" />
+                          <path d="M18 11.5c0 3.1-2.4 5.5-6 5.5s-6-2.4-6-5.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                          <path d="M12 17v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                          <path d="M9 21h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                        </svg>
+                      </button>
+                      {aiSending ? (
+                        <button
+                          type="button"
+                          className="room-ai-chat-inline-icon stop"
+                          aria-label="Cancel AI request"
+                          onClick={cancelAiRequest}
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="8" y="8" width="8" height="8" rx="1.6" />
+                          </svg>
+                        </button>
+                      ) : null}
+                    </div>
+                  </>
+                )}
               </div>
               {!aiSending ? (
-                <button type="submit" disabled={aiInput.trim().length === 0 || aiCooldownSeconds > 0}>
+                <button type="submit" disabled={isStudentAiChatDisabled || aiInput.trim().length === 0 || aiCooldownSeconds > 0}>
                   Send
                 </button>
               ) : null}
@@ -1705,11 +1844,12 @@ export default function MeetingRoomPage() {
             aria-label="Meeting controls"
           >
           <button
-            aria-label={cameraEnabled ? "Camera on" : "Camera off"}
+            aria-label={selfRole === "student" && hostControls.forceStudentCamerasOn ? "Camera locked on" : cameraEnabled ? "Camera on" : "Camera off"}
             className={`room-icon-button camera-icon-button ${cameraEnabled ? "camera-on" : "camera-off"}`}
-            title={cameraEnabled ? "Camera on" : "Camera off"}
+            title={selfRole === "student" && hostControls.forceStudentCamerasOn ? "Camera locked on" : cameraEnabled ? "Camera on" : "Camera off"}
             type="button"
             onClick={toggleCamera}
+            disabled={selfRole === "student" && hostControls.forceStudentCamerasOn}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24">
               <path d="M3 7.8C3 6.8 3.8 6 4.8 6h8.4c1 0 1.8.8 1.8 1.8v8.4c0 1-.8 1.8-1.8 1.8H4.8c-1 0-1.8-.8-1.8-1.8V7.8Z" />
@@ -1767,6 +1907,63 @@ export default function MeetingRoomPage() {
             </span>
           </button>
           </nav>
+          {selfRole === "teacher" ? (
+            <div className="host-controls-menu">
+              <button className="host-controls-button" type="button" aria-label="Host Controls" title="Host Controls">
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M4 7h10" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                  <path d="M18 7h2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                  <path d="M4 17h2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                  <path d="M10 17h10" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                  <circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" strokeWidth="2" />
+                  <circle cx="8" cy="17" r="2" fill="none" stroke="currentColor" strokeWidth="2" />
+                </svg>
+              </button>
+              <div className="host-controls-tile" role="menu" aria-label="Host Controls">
+                <button className="host-control-option" type="button" role="menuitem" onClick={() => void updateHostControls({ muteAll: true })}>
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M12 14.5c1.7 0 3-1.3 3-3V6c0-1.7-1.3-3-3-3S9 4.3 9 6v5.5c0 1.7 1.3 3 3 3Z" />
+                    <path d="M18 11.5c0 3.1-2.4 5.5-6 5.5s-6-2.4-6-5.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                    <path d="M5 5l14 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
+                  </svg>
+                  <span>Mute-all</span>
+                </button>
+                <button className="host-control-option" type="button" role="menuitem" onClick={() => void updateHostControls({ forceStudentCamerasOn: true })}>
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M3 7.8C3 6.8 3.8 6 4.8 6h8.4c1 0 1.8.8 1.8 1.8v8.4c0 1-.8 1.8-1.8 1.8H4.8c-1 0-1.8-.8-1.8-1.8V7.8Z" />
+                    <path d="m16 10 4.1-2.2c.4-.2.9.1.9.6v7.2c0 .5-.5.8-.9.6L16 14v-4Z" />
+                  </svg>
+                  <span>Turn All Cameras On</span>
+                </button>
+                <label className="host-control-option host-control-toggle">
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="2" />
+                    <path d="M12 7v5l3 2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                  </svg>
+                  <span>Viva-Time</span>
+                  <input
+                    type="checkbox"
+                    aria-label="Viva-Time"
+                    checked={hostControls.vivaTimeEnabled}
+                    onChange={(event) => void updateHostControls({ vivaTimeEnabled: event.target.checked })}
+                  />
+                </label>
+                <label className="host-control-option host-control-toggle">
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M4 5.5C4 4.7 4.7 4 5.5 4h13c.8 0 1.5.7 1.5 1.5v9c0 .8-.7 1.5-1.5 1.5H9l-4 4v-4.5c-.6-.2-1-.8-1-1.5v-8.5Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="2" />
+                    <path d="M8 9h8M8 12h5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                  </svg>
+                  <span>Meeting Chat</span>
+                  <input
+                    type="checkbox"
+                    aria-label="Meeting Chat"
+                    checked={hostControls.meetingChatEnabled}
+                    onChange={(event) => void updateHostControls({ meetingChatEnabled: event.target.checked })}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <section className="room-side-chat-card room-meeting-chat-card glass-panel" aria-label="Meeting Chat card">
@@ -1785,24 +1982,28 @@ export default function MeetingRoomPage() {
               <div ref={meetingChatEndRef} />
             </div>
             {meetingChatError ? <span className="room-meeting-chat-error">{meetingChatError}</span> : null}
-            <form
-              className="room-meeting-chat-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void sendMeetingChatMessage();
-              }}
-            >
-              <input
-                type="text"
-                value={meetingChatInput}
-                onChange={(event) => setMeetingChatInput(event.target.value)}
-                placeholder="Type message..."
-                aria-label="Type a meeting chat message"
-              />
-              <button type="submit" disabled={meetingChatSending || meetingChatInput.trim().length === 0}>
-                Send
-              </button>
-            </form>
+            {isStudentMeetingChatDisabled ? (
+              <div className="room-meeting-chat-disabled">Meeting Chat disabled.</div>
+            ) : (
+              <form
+                className="room-meeting-chat-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void sendMeetingChatMessage();
+                }}
+              >
+                <input
+                  type="text"
+                  value={meetingChatInput}
+                  onChange={(event) => setMeetingChatInput(event.target.value)}
+                  placeholder="Type message..."
+                  aria-label="Type a meeting chat message"
+                />
+                <button type="submit" disabled={meetingChatSending || meetingChatInput.trim().length === 0}>
+                  Send
+                </button>
+              </form>
+            )}
           </div>
         </section>
       </div>

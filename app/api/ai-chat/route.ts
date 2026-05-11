@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { canParticipantUseAiChat } from "../../../lib/meetings/service";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -9,6 +10,7 @@ type RequestBody = {
   messages?: ChatMessage[];
   summary?: string;
   verbosity?: "short" | "normal" | "detailed";
+  meetingCode?: string;
 };
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -196,16 +198,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const apiKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
-  if (!apiKey) {
-    return NextResponse.json({ error: "Missing OPENROUTER_API_KEY" }, { status: 500 });
-  }
-
   let body: RequestBody;
   try {
     body = (await request.json()) as RequestBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const participantId = request.headers.get("x-participant-id")?.trim() ?? "";
+  const meetingCode = typeof body.meetingCode === "string" ? body.meetingCode : "";
+  if (participantId && meetingCode && !canParticipantUseAiChat(meetingCode, participantId)) {
+    return NextResponse.json({ error: "AI Chat has been Disabled." }, { status: 403 });
+  }
+
+  const apiKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
+  if (!apiKey) {
+    return NextResponse.json({ error: "Missing OPENROUTER_API_KEY" }, { status: 500 });
   }
 
   const incomingMessages = Array.isArray(body.messages) ? body.messages : [];
