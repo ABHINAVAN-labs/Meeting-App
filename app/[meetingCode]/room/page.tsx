@@ -1369,6 +1369,7 @@ export default function MeetingRoomPage() {
     <main className="entry-shell room-shell">
       <div
         aria-label="Current time and day"
+        suppressHydrationWarning
         style={{
           position: "fixed",
           top: "14px",
