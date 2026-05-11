@@ -54,9 +54,26 @@ export default function MeetingCodePage() {
   const [joinError, setJoinError] = useState("");
   const [isJoining, setIsJoining] = useState(false);
   const [isWaitingApproval, setIsWaitingApproval] = useState(false);
+  const [profileRole, setProfileRole] = useState<Role | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hasAutoJoinedTeacher = useRef(false);
+
+  useEffect(() => {
+    const profileRaw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!profileRaw) {
+      return;
+    }
+
+    try {
+      const profile = JSON.parse(profileRaw) as Partial<Profile>;
+      if (profile.role === "student" || profile.role === "teacher") {
+        setProfileRole(profile.role);
+      }
+    } catch {
+      return;
+    }
+  }, []);
 
   async function requestPreviewStream(nextCamera = true, nextMic = true) {
     setCameraStatus("requesting");
@@ -287,7 +304,7 @@ export default function MeetingCodePage() {
   }, [stream]);
 
   return (
-    <main className="entry-shell ready-shell">
+    <main className={`entry-shell ready-shell${profileRole === "student" ? " student-waiting-shell" : ""}`}>
       <section className="preview-card glass-panel" aria-label="Video preview before joining">
         <div className="preview-header">
           <div>

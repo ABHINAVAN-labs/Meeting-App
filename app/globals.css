@@ -142,6 +142,26 @@ body:has(.home-shell) .ambient-color {
   display: none;
 }
 
+body:has(.room-shell) .animated-background {
+  background: url("/meeting-room-background.png") center / cover no-repeat;
+}
+
+body:has(.room-shell) .image-theme-layer,
+body:has(.room-shell) .background-depth,
+body:has(.room-shell) .ambient-color {
+  display: none;
+}
+
+body:has(.student-waiting-shell) .animated-background {
+  background: url("/student-waiting-room-background.png") center / cover no-repeat;
+}
+
+body:has(.student-waiting-shell) .image-theme-layer,
+body:has(.student-waiting-shell) .background-depth,
+body:has(.student-waiting-shell) .ambient-color {
+  display: none;
+}
+
 .entry-shell {
   position: relative;
   z-index: 1;
@@ -1757,6 +1777,9 @@ h1 {
 
 .room-meeting-chat-card {
   place-items: stretch;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.09)),
+    rgba(88, 118, 74, 0.34);
 }
 
 .room-meeting-chat {
