@@ -1,7 +1,20 @@
-import type { MeetingChatMessage, MeetingEvent, Participant, Room } from "./types";
+import type { HostControls, MeetingChatMessage, MeetingEvent, Participant, Room } from "./types";
 
 const rooms = new Map<string, Room>();
 const roomSubscribers = new Map<string, Set<(event: MeetingEvent) => void>>();
+const DEFAULT_HOST_CONTROLS: HostControls = {
+  muteAllRequestId: 0,
+  forceStudentCamerasOn: false,
+  vivaTimeEnabled: false,
+  meetingChatEnabled: false
+};
+
+function normalizeHostControls(hostControls?: Partial<HostControls>): HostControls {
+  return {
+    ...DEFAULT_HOST_CONTROLS,
+    ...hostControls
+  };
+}
 
 function normalizeParticipantStatus(participant: Participant): Participant {
   if (participant.status && typeof participant.handRaised === "boolean" && "handRaisedAt" in participant) {
@@ -27,7 +40,8 @@ function getOrCreateRoom(meetingCode: string): Room {
   const created: Room = {
     meetingCode,
     participants: new Map<string, Participant>(),
-    chatMessages: []
+    chatMessages: [],
+    hostControls: normalizeHostControls()
   };
   rooms.set(meetingCode, created);
   return created;
@@ -98,6 +112,21 @@ export function getMeetingChatMessages(meetingCode: string): MeetingChatMessage[
 
   room.chatMessages ??= [];
   return room.chatMessages;
+}
+
+export function getHostControls(meetingCode: string): HostControls {
+  const room = getOrCreateRoom(meetingCode);
+  room.hostControls = normalizeHostControls(room.hostControls);
+  return room.hostControls;
+}
+
+export function updateHostControls(meetingCode: string, updates: Partial<HostControls>): HostControls {
+  const room = getOrCreateRoom(meetingCode);
+  room.hostControls = normalizeHostControls({
+    ...room.hostControls,
+    ...updates
+  });
+  return room.hostControls;
 }
 
 export function removeParticipant(meetingCode: string, participantId: string): void {

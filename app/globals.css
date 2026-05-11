@@ -1671,6 +1671,19 @@ h1 {
   color: rgba(255, 232, 196, 0.62);
 }
 
+.room-ai-chat-disabled {
+  display: grid;
+  width: 100%;
+  height: 36px;
+  place-items: center start;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 10px;
+  padding: 0 10px;
+  color: rgba(255, 232, 196, 0.62);
+  background: rgba(15, 17, 28, 0.62);
+  box-sizing: border-box;
+}
+
 .room-ai-chat-form button {
   height: 28px;
   padding: 0 px;
@@ -1830,6 +1843,17 @@ h1 {
   color: rgba(255, 232, 196, 0.62);
 }
 
+.room-meeting-chat-disabled {
+  display: grid;
+  min-height: 38px;
+  place-items: center start;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 10px;
+  padding: 0 10px;
+  color: rgba(255, 232, 196, 0.62);
+  background: rgba(15, 17, 28, 0.62);
+}
+
 .room-meeting-chat-form button {
   min-height: 38px;
   padding: 0 12px;
@@ -1886,6 +1910,7 @@ h1 {
 }
 .room-meeting-card {
   grid-template-rows: minmax(0, 1fr) auto auto;
+  position: relative;
 }
 .room-meeting-card > .room-grid {
   align-content: start;
@@ -1894,6 +1919,143 @@ h1 {
 
 .room-meeting-card > .meeting-control-nav {
   margin-top: 6px;
+}
+
+.host-controls-button {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  color: #ffffff;
+  background: rgba(17, 17, 17, 0.76);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+}
+
+.host-controls-menu {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+}
+
+.host-controls-button svg {
+  width: 28px;
+  height: 28px;
+}
+
+.host-controls-button:hover {
+  transform: translateY(-2px);
+}
+
+.host-controls-menu::before {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  width: 100%;
+  height: 12px;
+  content: "";
+}
+
+.host-controls-tile {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: grid;
+  width: min(270px, calc(100vw - 36px));
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 14px;
+  opacity: 0;
+  pointer-events: auto;
+  visibility: hidden;
+  background: rgba(17, 17, 17, 0.86);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
+  transform: translateY(6px);
+  transition: opacity 180ms ease 360ms, transform 180ms ease 360ms, visibility 0s linear 540ms;
+}
+
+.host-controls-menu:hover .host-controls-tile,
+.host-controls-menu:focus-within .host-controls-tile {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+.host-control-option {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: var(--ink);
+  font-weight: 800;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.host-control-option svg {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+.host-control-option span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.host-control-option button,
+.host-control-option input {
+  cursor: pointer;
+}
+
+.host-control-option:is(button) {
+  cursor: pointer;
+}
+
+.host-control-toggle {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  cursor: pointer;
+}
+
+.host-control-toggle input {
+  appearance: none;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.host-control-toggle input::before {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  content: "";
+  transition: transform 160ms ease;
+}
+
+.host-control-toggle input:checked {
+  background: var(--mint);
+}
+
+.host-control-toggle input:checked::before {
+  transform: translateX(16px);
 }
 
 .meeting-code-corner-wrap {
@@ -2128,12 +2290,22 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 14px;
   opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  visibility: hidden;
   background: rgba(17, 17, 17, 0.86);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
   backdrop-filter: blur(16px);
   transform: translateY(-6px);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition: opacity 180ms ease 360ms, transform 180ms ease 360ms, visibility 0s linear 540ms;
+}
+
+.join-request-notifications::before {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 100%;
+  height: 12px;
+  content: "";
 }
 
 .participants-tile {
@@ -2149,19 +2321,22 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 14px;
   opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  visibility: hidden;
   background: rgba(17, 17, 17, 0.86);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
   backdrop-filter: blur(16px);
   transform: translateY(-6px);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition: opacity 180ms ease 360ms, transform 180ms ease 360ms, visibility 0s linear 540ms;
 }
 
 .join-request-notifications:hover .join-request-tile,
 .join-request-notifications:focus-within .join-request-tile {
   opacity: 1;
   pointer-events: auto;
+  visibility: visible;
   transform: translateY(0);
+  transition-delay: 0s;
 }
 
 .participants-menu:hover .participants-tile,

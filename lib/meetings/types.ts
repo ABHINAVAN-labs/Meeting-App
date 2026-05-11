@@ -21,10 +21,18 @@ export type MeetingChatMessage = {
   sentAt: number;
 };
 
+export type HostControls = {
+  muteAllRequestId: number;
+  forceStudentCamerasOn: boolean;
+  vivaTimeEnabled: boolean;
+  meetingChatEnabled: boolean;
+};
+
 export type Room = {
   meetingCode: string;
   participants: Map<string, Participant>;
   chatMessages: MeetingChatMessage[];
+  hostControls: HostControls;
 };
 
 export type MeetingEvent =
