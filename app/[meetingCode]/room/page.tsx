@@ -334,6 +334,40 @@ function isIgnoredLiveKitDataChannelError(message: string) {
   return message.includes("Unknown DataChannel error on lossy") || message.includes("Unknown DataChannel error on reliable");
 }
 
+const QUALITY_COLORS: Record<ConnectionQuality, string> = {
+  [ConnectionQuality.Unknown]: "#6b7280",
+  [ConnectionQuality.Excellent]: "#22c55e",
+  [ConnectionQuality.Good]: "#eab308",
+  [ConnectionQuality.Poor]: "#f97316",
+  [ConnectionQuality.Lost]: "#ef4444",
+};
+
+const QUALITY_LABELS: Record<ConnectionQuality, string> = {
+  [ConnectionQuality.Unknown]: "Unknown",
+  [ConnectionQuality.Excellent]: "Excellent",
+  [ConnectionQuality.Good]: "Good",
+  [ConnectionQuality.Poor]: "Poor",
+  [ConnectionQuality.Lost]: "Lost",
+};
+
+function QualityDot({ quality, title }: { quality: ConnectionQuality; title?: string }) {
+  return (
+    <span
+      title={title ?? `Connection: ${QUALITY_LABELS[quality]}`}
+      style={{
+        display: "inline-block",
+        width: 10,
+        height: 10,
+        borderRadius: "50%",
+        backgroundColor: QUALITY_COLORS[quality],
+        marginLeft: 6,
+        verticalAlign: "middle",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
 export default function MeetingRoomPage() {
   const params = useParams<{ meetingCode: string }>();
   const router = useRouter();
@@ -373,6 +407,7 @@ export default function MeetingRoomPage() {
   const [meetingChatError, setMeetingChatError] = useState("");
   const [hostControls, setHostControls] = useState<HostControls>(DEFAULT_HOST_CONTROLS);
   const [qualityProfile, setQualityProfile] = useState<QualityProfileName>("lecture");
+  const [selfConnectionQuality, setSelfConnectionQuality] = useState<ConnectionQuality>(ConnectionQuality.Excellent);
 
   const participantIdRef = useRef("");
   const selfRoleRef = useRef<ParticipantRole | null>(null);
@@ -913,6 +948,11 @@ export default function MeetingRoomPage() {
         const identity = participant?.identity ?? 'self';
         const label = participant ? `Remote: ${identity}` : 'Self';
         console.log(`[MediaLatency] ${label} | quality=${quality}`);
+        if (!participant) {
+          setSelfConnectionQuality(quality);
+        } else {
+          refreshRemoteParticipants(room);
+        }
       })
       .on(RoomEvent.ParticipantConnected, () => refreshRemoteParticipants(room))
       .on(RoomEvent.ParticipantDisconnected, () => refreshRemoteParticipants(room))
@@ -1793,7 +1833,7 @@ export default function MeetingRoomPage() {
           <div className="room-grid" aria-label="Participants grid">
           {selfRole === "teacher" ? (
             <article className="participant-card self-tile teacher-tile">
-              <p>You</p>
+              <p>You<QualityDot quality={selfConnectionQuality} title="Your connection" /></p>
               <div className="participant-video">
                 <video ref={localVideoRef} autoPlay muted playsInline suppressHydrationWarning />
                 {!cameraEnabled ? (
@@ -1806,7 +1846,7 @@ export default function MeetingRoomPage() {
             </article>
           ) : teacherRemote ? (
             <article className="participant-card teacher-tile" key={teacherRemote.id}>
-              <p>{teacherRemote.name} ({teacherRemote.role})</p>
+              <p>{teacherRemote.name} ({teacherRemote.role})<QualityDot quality={teacherRemote.connectionQuality} /></p>
               <div className="participant-video">
                 <RemoteAudio publication={teacherRemote.audioPublication} />
                 {teacherRemote.publication?.videoTrack || teacherRemote.stream ? (
@@ -1821,7 +1861,7 @@ export default function MeetingRoomPage() {
           <div className="student-tile-row">
             {selfRole === "student" ? (
               <article className="participant-card self-tile student-tile">
-                <p>You</p>
+                <p>You<QualityDot quality={selfConnectionQuality} title="Your connection" /></p>
                 <div className="participant-video">
                   <video ref={localVideoRef} autoPlay muted playsInline suppressHydrationWarning />
                   {!cameraEnabled ? (
@@ -1838,7 +1878,7 @@ export default function MeetingRoomPage() {
               studentRemotes.map((participant) => (
                 <article className="participant-card student-tile" key={participant.id}>
                   <p>
-                    {participant.name} ({participant.role})
+                    {participant.name} ({participant.role})<QualityDot quality={participant.connectionQuality} />
                   </p>
                   <div className="participant-video">
                     <RemoteAudio publication={participant.audioPublication} />
