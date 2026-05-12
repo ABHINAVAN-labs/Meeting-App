@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME } from "../../../../../lib/meetings/constants";
-import { listRoomParticipants, listVisibleMeetingChatMessages } from "../../../../../lib/meetings/service";
+import { getRoomHostControls, listRoomParticipants, listVisibleMeetingChatMessages } from "../../../../../lib/meetings/service";
 import { parseSessionCookie } from "../../../../../lib/meetings/session";
 import { normalizeMeetingCode } from "../../../../../lib/meetings/validation";
 
@@ -34,6 +34,7 @@ export async function GET(
     participants,
     pendingParticipants,
     sessionParticipant,
+    hostControls: getRoomHostControls(normalizedCode),
     meetingChatMessages: listVisibleMeetingChatMessages(normalizedCode, participantId),
     sessionParticipantId: participantId
   });

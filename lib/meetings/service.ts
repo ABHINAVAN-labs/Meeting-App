@@ -3,17 +3,19 @@ import { normalizeMeetingCode, normalizeParticipantName } from "./validation";
 import {
   addMeetingChatMessage,
   countRole,
+  getHostControls,
   getMeetingChatMessages,
   getParticipant,
   getParticipants,
   publishEvent,
   removeParticipant,
   touchParticipant,
+  updateHostControls,
   updateParticipantHandRaised,
   updateParticipantStatus,
   upsertParticipant
 } from "./store";
-import type { JoinMeetingRequest, MeetingChatMessage, Participant } from "./types";
+import type { HostControls, JoinMeetingRequest, MeetingChatMessage, Participant } from "./types";
 
 export type JoinResult =
   | { ok: true; meetingCode: string; participant: Participant; status: Participant["status"] }
@@ -81,6 +83,34 @@ export function listVisibleMeetingChatMessages(meetingCode: string, participantI
   return messages.filter((message) => message.role === "teacher" || message.participantId === participantId);
 }
 
+export function getRoomHostControls(meetingCode: string): HostControls {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return {
+      muteAllRequestId: 0,
+      forceStudentCamerasOn: false,
+      vivaTimeEnabled: false,
+      meetingChatEnabled: false
+    };
+  }
+
+  return getHostControls(normalizedMeetingCode);
+}
+
+export function canParticipantUseAiChat(meetingCode: string, participantId: string): boolean {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return false;
+  }
+
+  const participant = getParticipant(normalizedMeetingCode, participantId);
+  if (!participant || participant.status !== "active") {
+    return false;
+  }
+
+  return participant.role === "teacher" || !getHostControls(normalizedMeetingCode).vivaTimeEnabled;
+}
+
 export function sendMeetingChatMessage(
   meetingCode: string,
   participantId: string,
@@ -94,6 +124,9 @@ export function sendMeetingChatMessage(
   const participant = getParticipant(normalizedMeetingCode, participantId);
   if (!participant || participant.status !== "active") {
     return { ok: false, message: "Only active participants can send messages." };
+  }
+  if (participant.role === "student" && !getHostControls(normalizedMeetingCode).meetingChatEnabled) {
+    return { ok: false, message: "Meeting Chat disabled." };
   }
 
   const trimmedContent = content.trim();
@@ -199,6 +232,40 @@ export function removeParticipantFromRoom(
 
   removeParticipant(normalizedMeetingCode, targetParticipantId);
   return { ok: true };
+}
+
+export function updateRoomHostControls(
+  meetingCode: string,
+  actorParticipantId: string,
+  updates: Partial<Pick<HostControls, "forceStudentCamerasOn" | "vivaTimeEnabled" | "meetingChatEnabled">> & {
+    muteAll?: boolean;
+  }
+): { ok: true; hostControls: HostControls } | { ok: false; message: string } {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code." };
+  }
+  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+    return { ok: false, message: "Only active teacher can update host controls." };
+  }
+
+  const current = getHostControls(normalizedMeetingCode);
+  const nextUpdates: Partial<HostControls> = {};
+
+  if (updates.muteAll) {
+    nextUpdates.muteAllRequestId = current.muteAllRequestId + 1;
+  }
+  if (typeof updates.forceStudentCamerasOn === "boolean") {
+    nextUpdates.forceStudentCamerasOn = updates.forceStudentCamerasOn;
+  }
+  if (typeof updates.vivaTimeEnabled === "boolean") {
+    nextUpdates.vivaTimeEnabled = updates.vivaTimeEnabled;
+  }
+  if (typeof updates.meetingChatEnabled === "boolean") {
+    nextUpdates.meetingChatEnabled = updates.meetingChatEnabled;
+  }
+
+  return { ok: true, hostControls: updateHostControls(normalizedMeetingCode, nextUpdates) };
 }
 
 export function setParticipantHandRaised(
