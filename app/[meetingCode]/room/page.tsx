@@ -1,15 +1,17 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
+  ConnectionQuality,
   DisconnectReason,
   ConnectionState,
   LogLevel,
   LocalTrackPublication,
   setLogExtension,
   setLogLevel,
+  Participant,
   RemoteParticipant,
   RemoteTrackPublication,
   Room,
@@ -820,6 +822,8 @@ export default function MeetingRoomPage() {
       setSelfRole(payload.role);
     }
 
+    
+
     if (!url.startsWith("wss://") && !url.startsWith("ws://")) {
       setAccessError("LiveKit URL must start with wss:// (or ws:// for local dev).");
       setCameraStatus("blocked");
@@ -848,6 +852,12 @@ export default function MeetingRoomPage() {
           });
         }
       })
+      .on(RoomEvent.ConnectionQualityChanged, (quality: ConnectionQuality, participant: Participant) => {
+        const identity = participant?.identity ?? 'self';
+        const label = participant ? `Remote: ${identity}` : 'Self';
+        const rttUs = 0;
+        console.log(`[MediaLatency] ${label} | quality=${quality} | rtt=${rttUs}µs`);
+      })
       .on(RoomEvent.ParticipantConnected, () => refreshRemoteParticipants(room))
       .on(RoomEvent.ParticipantDisconnected, () => refreshRemoteParticipants(room))
       .on(RoomEvent.TrackPublished, () => refreshRemoteParticipants(room))
@@ -856,6 +866,8 @@ export default function MeetingRoomPage() {
       .on(RoomEvent.TrackUnsubscribed, () => refreshRemoteParticipants(room))
       .on(RoomEvent.TrackMuted, () => refreshRemoteParticipants(room))
       .on(RoomEvent.TrackUnmuted, () => refreshRemoteParticipants(room));
+
+    (window as any).__room = room;
 
     try {
       if (!token || !token.includes(".")) {
