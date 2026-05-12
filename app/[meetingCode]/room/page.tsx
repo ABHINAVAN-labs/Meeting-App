@@ -19,6 +19,7 @@ import {
   Track
 } from "livekit-client";
 import { normalizeMeetingCode } from "../../../lib/meetings/validation";
+import { QUALITY_PROFILES, buildRoomOptions, type QualityProfileName } from "../../../lib/realtime/profiles";
 
 type CameraStatus = "idle" | "requesting" | "active" | "blocked";
 
@@ -29,6 +30,7 @@ type RemoteTile = {
   publication?: RemoteTrackPublication;
   audioPublication?: RemoteTrackPublication;
   stream?: MediaStream;
+  connectionQuality: ConnectionQuality;
 };
 
 type ParticipantRole = "student" | "teacher";
@@ -370,6 +372,7 @@ export default function MeetingRoomPage() {
   const [meetingChatSending, setMeetingChatSending] = useState(false);
   const [meetingChatError, setMeetingChatError] = useState("");
   const [hostControls, setHostControls] = useState<HostControls>(DEFAULT_HOST_CONTROLS);
+  const [qualityProfile, setQualityProfile] = useState<QualityProfileName>("lecture");
 
   const participantIdRef = useRef("");
   const selfRoleRef = useRef<ParticipantRole | null>(null);
@@ -766,7 +769,8 @@ export default function MeetingRoomPage() {
       name: participant.name || participant.identity,
       role,
       publication: videoPub,
-      audioPublication: audioPub
+      audioPublication: audioPub,
+      connectionQuality: participant.connectionQuality,
     };
   }
 
@@ -881,7 +885,10 @@ export default function MeetingRoomPage() {
       return;
     }
 
-    const room = new Room();
+    const profile = QUALITY_PROFILES[qualityProfile];
+    const role = selfRoleRef.current ?? "student";
+    const roomOptions = buildRoomOptions(profile, role);
+    const room = new Room(roomOptions);
     roomRef.current = room;
 
     room
@@ -905,8 +912,7 @@ export default function MeetingRoomPage() {
       .on(RoomEvent.ConnectionQualityChanged, (quality: ConnectionQuality, participant: Participant) => {
         const identity = participant?.identity ?? 'self';
         const label = participant ? `Remote: ${identity}` : 'Self';
-        const rttUs = 0;
-        console.log(`[MediaLatency] ${label} | quality=${quality} | rtt=${rttUs}µs`);
+        console.log(`[MediaLatency] ${label} | quality=${quality}`);
       })
       .on(RoomEvent.ParticipantConnected, () => refreshRemoteParticipants(room))
       .on(RoomEvent.ParticipantDisconnected, () => refreshRemoteParticipants(room))
@@ -1959,6 +1965,25 @@ export default function MeetingRoomPage() {
                     checked={hostControls.vivaTimeEnabled}
                     onChange={(event) => void updateHostControls({ vivaTimeEnabled: event.target.checked })}
                   />
+                </label>
+                <label className="host-control-option">
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M4 4h16v16H4V4Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                    <path d="M8 12l3 3 5-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                  </svg>
+                  <span>Quality: {QUALITY_PROFILES[qualityProfile].label}</span>
+                  <select
+                    aria-label="Quality Profile"
+                    value={qualityProfile}
+                    onChange={(event) => setQualityProfile(event.target.value as QualityProfileName)}
+                    style={{ marginLeft: "auto", fontSize: "0.75rem", padding: "2px 4px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.2)", background: "transparent", color: "#f7fafc" }}
+                  >
+                    {(["lecture", "seminar", "large-class"] as QualityProfileName[]).map((name) => (
+                      <option key={name} value={name} style={{ background: "#1a1f2e", color: "#f7fafc" }}>
+                        {QUALITY_PROFILES[name].label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="host-control-option host-control-toggle">
                   <svg aria-hidden="true" viewBox="0 0 24 24">
