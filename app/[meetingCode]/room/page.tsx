@@ -387,6 +387,7 @@ export default function MeetingRoomPage() {
   const [selfRole, setSelfRole] = useState<ParticipantRole | null>(null);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isRaisedHandsPopupOpen, setIsRaisedHandsPopupOpen] = useState(false);
+  const [isParticipantsPopupOpen, setIsParticipantsPopupOpen] = useState(false);
   const [isCopiedToastVisible, setIsCopiedToastVisible] = useState(false);
   const [clockNow, setClockNow] = useState(() => new Date());
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
@@ -408,6 +409,7 @@ export default function MeetingRoomPage() {
   const [hostControls, setHostControls] = useState<HostControls>(DEFAULT_HOST_CONTROLS);
   const [qualityProfile, setQualityProfile] = useState<QualityProfileName>("lecture");
   const [selfConnectionQuality, setSelfConnectionQuality] = useState<ConnectionQuality>(ConnectionQuality.Excellent);
+  const [studentGalleryPage, setStudentGalleryPage] = useState(1);
 
   const participantIdRef = useRef("");
   const selfRoleRef = useRef<ParticipantRole | null>(null);
@@ -440,6 +442,8 @@ export default function MeetingRoomPage() {
   const meetingChatEndRef = useRef<HTMLDivElement | null>(null);
   const previousPendingParticipantsCountRef = useRef(0);
   const lastAppliedMuteAllRequestIdRef = useRef(0);
+  const studentCameraTurnedOnAtRef = useRef<Record<string, number>>({});
+  const participantsMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -531,6 +535,26 @@ export default function MeetingRoomPage() {
   useEffect(() => {
     meetingChatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [meetingChatMessages]);
+
+  useEffect(() => {
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (!participantsMenuRef.current) {
+        return;
+      }
+      if (!participantsMenuRef.current.contains(event.target as Node)) {
+        setIsParticipantsPopupOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleDocumentClick);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentClick);
+    };
+  }, []);
+
+  useEffect(() => {
+    setStudentGalleryPage(1);
+  }, [remoteParticipants, selfRole, cameraEnabled]);
 
   async function sendMeetingChatMessage() {
     const content = meetingChatInput.trim();
@@ -1550,6 +1574,78 @@ export default function MeetingRoomPage() {
 
   const teacherRemote = remoteParticipants.find((participant) => participant.role === "teacher");
   const studentRemotes = remoteParticipants.filter((participant) => participant.role !== "teacher");
+  const selfStudentParticipant =
+    selfRole === "student"
+      ? {
+          id: participantIdRef.current || "self-student",
+          name: "You",
+          role: "student",
+          publication: undefined,
+          audioPublication: undefined,
+          stream: localPreviewStreamRef.current ?? undefined,
+          connectionQuality: selfConnectionQuality,
+          hasVideo: cameraEnabled
+        }
+      : null;
+  const remoteStudentParticipants = studentRemotes.map((participant) => ({
+    ...participant,
+    hasVideo: Boolean(participant.publication?.videoTrack || participant.stream)
+  }));
+  const teacherVisibleStudents = remoteStudentParticipants;
+
+  const currentCameraOnIds = teacherVisibleStudents
+    .filter((participant) => participant.hasVideo)
+    .map((participant) => participant.id);
+
+  useEffect(() => {
+    const nowMs = Date.now();
+    currentCameraOnIds.forEach((id) => {
+      if (!studentCameraTurnedOnAtRef.current[id]) {
+        studentCameraTurnedOnAtRef.current[id] = nowMs;
+      }
+    });
+    Object.keys(studentCameraTurnedOnAtRef.current).forEach((id) => {
+      if (!currentCameraOnIds.includes(id)) {
+        delete studentCameraTurnedOnAtRef.current[id];
+      }
+    });
+  }, [currentCameraOnIds]);
+
+  const spotlightStudentFromCamera = teacherVisibleStudents
+    .filter((participant) => participant.hasVideo)
+    .sort((a, b) => (studentCameraTurnedOnAtRef.current[b.id] ?? 0) - (studentCameraTurnedOnAtRef.current[a.id] ?? 0))[0];
+  const fallbackSpotlightStudent = teacherVisibleStudents.length > 0 ? teacherVisibleStudents[teacherVisibleStudents.length - 1] : null;
+  const spotlightStudent = spotlightStudentFromCamera ?? fallbackSpotlightStudent;
+  const remainingStudents = teacherVisibleStudents.filter((participant) => participant.id !== spotlightStudent?.id);
+  const totalTeacherPages = Math.max(1, 1 + Math.ceil(remainingStudents.length / 4));
+  const clampedGalleryPage = Math.min(studentGalleryPage, totalTeacherPages);
+  const isTeacherSpotlightPage = clampedGalleryPage === 1;
+  const galleryStartIndex = isTeacherSpotlightPage ? 0 : (clampedGalleryPage - 2) * 4;
+  const paginatedStudents = isTeacherSpotlightPage ? [] : remainingStudents.slice(galleryStartIndex, galleryStartIndex + 4);
+
+  useEffect(() => {
+    if (studentGalleryPage !== clampedGalleryPage) {
+      setStudentGalleryPage(clampedGalleryPage);
+    }
+  }, [clampedGalleryPage, studentGalleryPage]);
+
+  useEffect(() => {
+    const room = roomRef.current;
+    if (!localVideoRef.current) {
+      return;
+    }
+
+    if (room) {
+      void attachLocalVideo(room);
+      return;
+    }
+
+    if (localPreviewStreamRef.current) {
+      localVideoRef.current.srcObject = localPreviewStreamRef.current;
+      void localVideoRef.current.play().catch(() => undefined);
+    }
+  }, [selfRole, clampedGalleryPage, cameraEnabled]);
+
   const latestRaisedHand = raisedHands[raisedHands.length - 1];
   const additionalRaisedHandsCount = Math.max(0, raisedHands.length - 1);
   const clockLabel = `${clockNow.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${clockNow.toLocaleDateString([], { weekday: "short" })}`;
@@ -1607,14 +1703,21 @@ export default function MeetingRoomPage() {
             </div>
           ) : null}
 
-          <div className="participants-menu">
-            <button className="participants-button" type="button" aria-label={`Participants: ${activeStudents.length + 1}`}>
+          <div ref={participantsMenuRef} className={`participants-menu${isParticipantsPopupOpen ? " open" : ""}`}>
+            <button
+              className="participants-button"
+              type="button"
+              aria-label={`Participants: ${activeStudents.length + 1}`}
+              aria-expanded={isParticipantsPopupOpen}
+              aria-controls="participants-list"
+              onClick={() => setIsParticipantsPopupOpen((prev) => !prev)}
+            >
               <svg aria-hidden="true" viewBox="0 0 24 24">
                 <path d="M8.5 11.2a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2Zm7 0a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2ZM2.8 20c0-3.3 2.6-6 5.7-6s5.7 2.7 5.7 6v.2H2.8V20Zm11.8.2v-.5a7.5 7.5 0 0 0-1.6-4.6 5.2 5.2 0 0 1 2.5-.6c2.8 0 5.1 2.4 5.1 5.4v.3h-6Z" />
               </svg>
               <span>{activeStudents.length + 1}</span>
             </button>
-            <div className="participants-tile" role="menu" aria-label="Active participants">
+            <div id="participants-list" className="participants-tile" role="menu" aria-label="Active participants">
               <div className="participant-menu-row">
                 <span>You</span>
               </div>
@@ -1831,7 +1934,7 @@ export default function MeetingRoomPage() {
 
         <section className="capture-card room-meeting-card glass-panel" aria-label="Meeting room">
           <div className="room-grid" aria-label="Participants grid">
-          {selfRole === "teacher" ? (
+          {selfRole === "teacher" && isTeacherSpotlightPage ? (
             <article className="participant-card self-tile teacher-tile">
               <p>You<QualityDot quality={selfConnectionQuality} title="Your connection" /></p>
               <div className="participant-video">
@@ -1859,9 +1962,29 @@ export default function MeetingRoomPage() {
           ) : null}
 
           <div className="student-tile-row">
-            {selfRole === "student" ? (
-              <article className="participant-card self-tile student-tile">
-                <p>You<QualityDot quality={selfConnectionQuality} title="Your connection" /></p>
+            {selfRole === "teacher" && spotlightStudent && isTeacherSpotlightPage ? (
+              <article className="participant-card student-tile spotlight-student-tile" key={spotlightStudent.id}>
+                <p>
+                  {`${spotlightStudent.name} (${spotlightStudent.role})`}
+                  <QualityDot quality={spotlightStudent.connectionQuality} />
+                </p>
+                <div className="participant-video">
+                  <RemoteAudio publication={spotlightStudent.audioPublication} />
+                  {spotlightStudent.publication?.videoTrack || spotlightStudent.stream ? (
+                    <RemoteVideo publication={spotlightStudent.publication} stream={spotlightStudent.stream} />
+                  ) : (
+                    <div className="participant-placeholder">Connected without video</div>
+                  )}
+                </div>
+              </article>
+            ) : null}
+
+            {selfRole === "student" && selfStudentParticipant ? (
+              <article className="participant-card self-tile student-tile" key={selfStudentParticipant.id}>
+                <p>
+                  You ({selfStudentParticipant.role})
+                  <QualityDot quality={selfConnectionQuality} title="Your connection" />
+                </p>
                 <div className="participant-video">
                   <video ref={localVideoRef} autoPlay muted playsInline suppressHydrationWarning />
                   {!cameraEnabled ? (
@@ -1874,22 +1997,25 @@ export default function MeetingRoomPage() {
               </article>
             ) : null}
 
-            {studentRemotes.length > 0 ? (
-              studentRemotes.map((participant) => (
-                <article className="participant-card student-tile" key={participant.id}>
-                  <p>
-                    {participant.name} ({participant.role})<QualityDot quality={participant.connectionQuality} />
-                  </p>
-                  <div className="participant-video">
-                    <RemoteAudio publication={participant.audioPublication} />
-                    {participant.publication?.videoTrack || participant.stream ? (
-                      <RemoteVideo publication={participant.publication} stream={participant.stream} />
-                    ) : (
-                      <div className="participant-placeholder">Connected without video</div>
-                    )}
-                  </div>
-                </article>
-              ))
+            {selfRole === "teacher" && paginatedStudents.length > 0 ? (
+              <div className="student-tile-page-grid">
+                {paginatedStudents.map((participant) => (
+                  <article className="participant-card student-tile" key={participant.id}>
+                    <p>
+                      {`${participant.name} (${participant.role})`}
+                      <QualityDot quality={participant.connectionQuality} />
+                    </p>
+                    <div className="participant-video">
+                      <RemoteAudio publication={participant.audioPublication} />
+                      {participant.publication?.videoTrack || participant.stream ? (
+                        <RemoteVideo publication={participant.publication} stream={participant.stream} />
+                      ) : (
+                        <div className="participant-placeholder">Connected without video</div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
             ) : null}
           </div>
         </div>
@@ -1897,6 +2023,17 @@ export default function MeetingRoomPage() {
           {accessError ? <p className="form-error">{accessError}</p> : null}
 
 
+          <div className="meeting-controls-row">
+          {selfRole === "teacher" && remainingStudents.length > 0 ? (
+            <button
+              type="button"
+              className="student-pagination-side-button"
+              onClick={() => setStudentGalleryPage((prev) => Math.max(1, prev - 1))}
+              disabled={clampedGalleryPage === 1}
+            >
+              Previous
+            </button>
+          ) : null}
           <nav
             className={`meeting-control-nav ${selfRole === "student" ? "student-control-nav" : "teacher-control-nav"}`}
             aria-label="Meeting controls"
@@ -1965,6 +2102,17 @@ export default function MeetingRoomPage() {
             </span>
           </button>
           </nav>
+          {selfRole === "teacher" && remainingStudents.length > 0 ? (
+            <button
+              type="button"
+              className="student-pagination-side-button"
+              onClick={() => setStudentGalleryPage((prev) => Math.min(totalTeacherPages, prev + 1))}
+              disabled={clampedGalleryPage === totalTeacherPages}
+            >
+              Next
+            </button>
+          ) : null}
+          </div>
           {selfRole === "teacher" ? (
             <div className="host-controls-menu">
               <button className="host-controls-button" type="button" aria-label="Host Controls" title="Host Controls">

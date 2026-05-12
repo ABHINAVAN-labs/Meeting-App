@@ -1351,9 +1351,35 @@ h1 {
   justify-items: center;
 }
 
+.room-shell .glass-panel::before,
+.room-shell .glass-panel::after {
+  display: none;
+}
+
+.room-shell .participant-video {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  contain: paint;
+}
+
+.room-shell .room-side-chat-card {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.room-shell .room-meeting-chat-card {
+  transform: none;
+  backface-visibility: visible;
+}
+
+.room-shell .participant-video video {
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
 .room-cards-layout {
   display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(180px, 230px);
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(240px, 300px);
   align-items: center;
   gap: clamp(12px, 1.8vw, 22px);
   width: min(1360px, 100%);
@@ -1773,13 +1799,18 @@ h1 {
 
 .room-ai-chat-card {
   place-items: stretch;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06)),
+    rgba(88, 118, 74, 0.9);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
 .room-meeting-chat-card {
   place-items: stretch;
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.09)),
-    rgba(88, 118, 74, 0.34);
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06)),
+    rgba(88, 118, 74, 0.9);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
 .room-meeting-chat {
@@ -1941,6 +1972,17 @@ h1 {
 }
 
 .room-meeting-card > .meeting-control-nav {
+  margin-top: 6px;
+}
+
+.meeting-controls-row {
+  align-self: end;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
   margin-top: 6px;
 }
 
@@ -2363,10 +2405,13 @@ h1 {
 }
 
 .participants-menu:hover .participants-tile,
-.participants-menu:focus-within .participants-tile {
+.participants-menu:focus-within .participants-tile,
+.participants-menu.open .participants-tile {
   opacity: 1;
   pointer-events: auto;
+  visibility: visible;
   transform: translateY(0);
+  transition-delay: 0s;
 }
 
 .join-request-row {
@@ -2499,6 +2544,17 @@ h1 {
   margin-bottom: 12px;
 }
 
+.student-tile-page-grid {
+  width: min(620px, 100%);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.spotlight-student-tile {
+  width: min(600px, 100%);
+}
+
 .student-tile {
   width: min(290px, 100%);
 }
@@ -2506,6 +2562,27 @@ h1 {
 .student-tile .participant-video,
 .student-tile .participant-placeholder {
   height: 130px;
+}
+
+.spotlight-student-tile .participant-video,
+.spotlight-student-tile .participant-placeholder {
+  height: 190px;
+}
+
+.student-pagination-side-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.student-pagination-side-button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }
 
 .participant-video video {
@@ -2652,6 +2729,10 @@ h1 {
   }
 
   .room-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .student-tile-page-grid {
     grid-template-columns: 1fr;
   }
 
