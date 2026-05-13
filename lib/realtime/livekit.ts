@@ -1,4 +1,6 @@
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, TrackSource } from "livekit-server-sdk";
+export const LIVEKIT_TOKEN_TTL_SECONDS = 5 * 60;
+const LIVEKIT_TOKEN_TTL = "5m";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -20,14 +22,23 @@ export async function createLiveKitToken(params: {
   const token = new AccessToken(apiKey, apiSecret, {
     identity: params.participantId,
     name: params.participantName,
-    metadata: JSON.stringify({ role: params.role })
+    metadata: JSON.stringify({ role: params.role }),
+    ttl: LIVEKIT_TOKEN_TTL
   });
+  token.ttl = LIVEKIT_TOKEN_TTL;
 
+  const isTeacher = params.role === "teacher";
   token.addGrant({
     roomJoin: true,
     room: params.meetingCode,
     canPublish: true,
-    canSubscribe: true
+    canSubscribe: true,
+    canPublishSources: isTeacher
+      ? [TrackSource.CAMERA, TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO]
+      : [TrackSource.CAMERA, TrackSource.MICROPHONE],
+    canPublishData: isTeacher,
+    canUpdateOwnMetadata: isTeacher,
+    roomAdmin: isTeacher
   });
 
   const jwt = await token.toJwt();

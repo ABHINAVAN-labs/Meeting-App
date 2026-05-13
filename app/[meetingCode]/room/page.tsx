@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ConnectionQuality,
@@ -174,6 +174,9 @@ const DEFAULT_HOST_CONTROLS: HostControls = {
   vivaTimeEnabled: false,
   meetingChatEnabled: false
 };
+const POLL_FALLBACK_INTERVAL_MS = 10_000;
+const TOKEN_REFRESH_SKEW_SECONDS = 60;
+const TOKEN_REFRESH_MIN_DELAY_MS = 15_000;
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
@@ -444,6 +447,8 @@ export default function MeetingRoomPage() {
   const lastAppliedMuteAllRequestIdRef = useRef(0);
   const studentCameraTurnedOnAtRef = useRef<Record<string, number>>({});
   const participantsMenuRef = useRef<HTMLDivElement | null>(null);
+  const tokenRefreshTimerRef = useRef<number | null>(null);
+  const livekitTokenRef = useRef("");
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -877,6 +882,71 @@ export default function MeetingRoomPage() {
     }
   }
 
+  function clearTokenRefreshTimer() {
+    if (tokenRefreshTimerRef.current) {
+      window.clearTimeout(tokenRefreshTimerRef.current);
+      tokenRefreshTimerRef.current = null;
+    }
+  }
+
+  function getJwtExpSeconds(token: string) {
+    const payloadSegment = token.split(".")[1];
+    if (!payloadSegment) {
+      return null;
+    }
+
+    try {
+      const normalized = payloadSegment.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+      const decoded = atob(padded);
+      const parsed = JSON.parse(decoded) as { exp?: unknown };
+      return typeof parsed.exp === "number" ? parsed.exp : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function scheduleTokenRefresh() {
+    clearTokenRefreshTimer();
+
+    if (!roomRef.current || !readableMeetingCode) {
+      return;
+    }
+
+    const connectedAt = Math.floor(Date.now() / 1000);
+    const token = livekitTokenRef.current;
+    const exp = token ? getJwtExpSeconds(token) : null;
+    if (!exp) {
+      return;
+    }
+
+    const delayMs = Math.max((exp - connectedAt - TOKEN_REFRESH_SKEW_SECONDS) * 1000, TOKEN_REFRESH_MIN_DELAY_MS);
+    tokenRefreshTimerRef.current = window.setTimeout(async () => {
+      const activeRoom = roomRef.current;
+      if (!activeRoom || !readableMeetingCode || !participantIdRef.current) {
+        return;
+      }
+
+      const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/token/refresh`, {
+        method: "POST",
+        headers: { "x-participant-id": participantIdRef.current }
+      }).catch(() => null);
+
+      if (!response || !response.ok) {
+        scheduleTokenRefresh();
+        return;
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as { token?: unknown };
+      const nextToken = typeof payload.token === "string" ? payload.token : "";
+      if (nextToken.includes(".")) {
+        livekitTokenRef.current = nextToken;
+      }
+
+      scheduleTokenRefresh();
+    }, delayMs);
+  }
+
   async function connectRoom() {
     if (!readableMeetingCode || roomRef.current || isConnectingRef.current) {
       return;
@@ -960,6 +1030,8 @@ export default function MeetingRoomPage() {
         }
       })
       .on(RoomEvent.Disconnected, (reason) => {
+        clearTokenRefreshTimer();
+        livekitTokenRef.current = "";
         if (!isLeavingRef.current && !isExpectedDisconnect(reason)) {
           console.warn("LiveKit disconnected", {
             reason,
@@ -999,6 +1071,7 @@ export default function MeetingRoomPage() {
       }
 
       await room.connect(url, token);
+      livekitTokenRef.current = token;
       await room.startAudio();
 
       let cameraOn = cameraEnabledRef.current;
@@ -1053,6 +1126,7 @@ export default function MeetingRoomPage() {
         setAccessError("");
       }
       refreshRemoteParticipants(room);
+      scheduleTokenRefresh();
     } catch (error) {
       const details = formatUnknownError(error);
       const wasAborted = details.message.includes("Abort handler called");
@@ -1084,6 +1158,8 @@ export default function MeetingRoomPage() {
   async function leaveMeeting() {
     isLeavingRef.current = true;
     connectAttemptRef.current += 1;
+    clearTokenRefreshTimer();
+    livekitTokenRef.current = "";
 
     if (readableMeetingCode) {
       if (!participantIdRef.current) {
@@ -1287,6 +1363,81 @@ export default function MeetingRoomPage() {
     setMicEnabled(micOn);
   }
 
+  const syncRoomState = useCallback(async (source: "poll" | "event") => {
+    if (!readableMeetingCode) {
+      return;
+    }
+
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/participants`, {
+      headers: actorParticipantId ? { "x-participant-id": actorParticipantId } : undefined
+    }).catch(() => null);
+    if (!response || !response.ok) {
+      return;
+    }
+
+    const payload = (await response.json()) as {
+      sessionParticipant?: {
+        role?: ParticipantRole;
+        handRaised?: boolean;
+      } | null;
+      participants?: ActiveParticipant[];
+      pendingParticipants?: PendingParticipant[];
+      hostControls?: HostControls;
+      meetingChatMessages?: MeetingChatMessage[];
+    };
+
+    if (!payload.sessionParticipant) {
+      if (!hasBeenRemovedRef.current) {
+        hasBeenRemovedRef.current = true;
+        if (selfRoleRef.current === "teacher") {
+          setAccessError("Join this meeting from lobby first.");
+        } else {
+          setAccessError("You were removed from this room by the teacher.");
+          await leaveMeeting();
+          router.push("/landing");
+        }
+      }
+      return;
+    }
+
+    const serverRole = payload.sessionParticipant.role;
+    if (serverRole === "teacher" || serverRole === "student") {
+      selfRoleRef.current = serverRole;
+      setSelfRole(serverRole);
+    }
+    setIsHandRaised(Boolean(payload.sessionParticipant.handRaised));
+
+    const queue = (payload.participants ?? [])
+      .filter((participant) => participant.role === "student" && participant.status === "active" && participant.handRaised)
+      .sort((a, b) => (a.handRaisedAt ?? Number.MAX_SAFE_INTEGER) - (b.handRaisedAt ?? Number.MAX_SAFE_INTEGER));
+    setRaisedHands(queue);
+
+    const students = (payload.participants ?? []).filter(
+      (participant) => participant.role === "student" && participant.status === "active"
+    );
+    setActiveStudents(students);
+    setHostControls(payload.hostControls ?? DEFAULT_HOST_CONTROLS);
+    setMeetingChatMessages(payload.meetingChatMessages ?? []);
+
+    if (serverRole === "teacher") {
+      setPendingParticipants(payload.pendingParticipants ?? []);
+    } else {
+      setPendingParticipants([]);
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[room-sync]", {
+        source,
+        meetingCode: readableMeetingCode,
+        role: serverRole ?? "unknown",
+        participants: payload.participants?.length ?? 0,
+        pendingParticipants: payload.pendingParticipants?.length ?? 0,
+        raisedHands: queue.length
+      });
+    }
+  }, [readableMeetingCode, router]);
+
   useEffect(() => {
     connectRoom();
 
@@ -1297,6 +1448,8 @@ export default function MeetingRoomPage() {
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
+      clearTokenRefreshTimer();
+      livekitTokenRef.current = "";
       window.removeEventListener("beforeunload", handleBeforeUnload);
       isLeavingRef.current = true;
       connectAttemptRef.current += 1;
@@ -1331,6 +1484,7 @@ export default function MeetingRoomPage() {
         | { type: "participant-joined"; participant: ActiveParticipant }
         | { type: "participant-left"; participantId: string }
         | { type: "participant-status-updated"; participantId: string; status: ParticipantStatus }
+        | { type: "participant-hand-updated"; participantId: string; handRaised: boolean; handRaisedAt: number | null }
         | {
             type: "signal";
             fromParticipantId: string;
@@ -1340,18 +1494,27 @@ export default function MeetingRoomPage() {
 
       if (event.type === "snapshot") {
         participantIdRef.current = event.sessionParticipantId;
+        void syncRoomState("event");
         return;
       }
 
       if (event.type === "participant-joined" && event.participant.status === "active") {
+        void syncRoomState("event");
         return;
       }
 
-      if (event.type === "participant-status-updated" && event.status !== "active") {
+      if (event.type === "participant-status-updated") {
+        void syncRoomState("event");
         return;
       }
 
       if (event.type === "participant-left") {
+        void syncRoomState("event");
+        return;
+      }
+
+      if (event.type === "participant-hand-updated") {
+        void syncRoomState("event");
         return;
       }
 
@@ -1363,7 +1526,7 @@ export default function MeetingRoomPage() {
     return () => {
       events.close();
     };
-  }, [readableMeetingCode]);
+  }, [readableMeetingCode, syncRoomState]);
 
   useEffect(() => {
   }, [activeStudents]);
@@ -1403,70 +1566,15 @@ export default function MeetingRoomPage() {
       return;
     }
 
-    const poll = window.setInterval(async () => {
-      const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
-      const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/participants`, {
-        headers: actorParticipantId ? { "x-participant-id": actorParticipantId } : undefined
-      }).catch(() => null);
-      if (!response || !response.ok) {
-        return;
-      }
-
-      const payload = (await response.json()) as {
-        sessionParticipant?: {
-          role?: ParticipantRole;
-          handRaised?: boolean;
-        } | null;
-        participants?: ActiveParticipant[];
-        pendingParticipants?: PendingParticipant[];
-        hostControls?: HostControls;
-        meetingChatMessages?: MeetingChatMessage[];
-      };
-
-      if (!payload.sessionParticipant) {
-        if (!hasBeenRemovedRef.current) {
-          hasBeenRemovedRef.current = true;
-          if (selfRoleRef.current === "teacher") {
-            setAccessError("Join this meeting from lobby first.");
-          } else {
-            setAccessError("You were removed from this room by the teacher.");
-            await leaveMeeting();
-            router.push("/landing");
-          }
-        }
-        return;
-      }
-
-      const serverRole = payload.sessionParticipant?.role;
-      if (serverRole === "teacher" || serverRole === "student") {
-        selfRoleRef.current = serverRole;
-        setSelfRole(serverRole);
-      }
-      setIsHandRaised(Boolean(payload.sessionParticipant?.handRaised));
-
-      const queue = (payload.participants ?? [])
-        .filter((participant) => participant.role === "student" && participant.status === "active" && participant.handRaised)
-        .sort((a, b) => (a.handRaisedAt ?? Number.MAX_SAFE_INTEGER) - (b.handRaisedAt ?? Number.MAX_SAFE_INTEGER));
-      setRaisedHands(queue);
-
-      const students = (payload.participants ?? []).filter(
-        (participant) => participant.role === "student" && participant.status === "active"
-      );
-      setActiveStudents(students);
-      setHostControls(payload.hostControls ?? DEFAULT_HOST_CONTROLS);
-      setMeetingChatMessages(payload.meetingChatMessages ?? []);
-
-      if (serverRole === "teacher") {
-        setPendingParticipants(payload.pendingParticipants ?? []);
-      } else {
-        setPendingParticipants([]);
-      }
-    }, 2000);
+    void syncRoomState("poll");
+    const poll = window.setInterval(() => {
+      void syncRoomState("poll");
+    }, POLL_FALLBACK_INTERVAL_MS);
 
     return () => {
       window.clearInterval(poll);
     };
-  }, [readableMeetingCode]);
+  }, [readableMeetingCode, syncRoomState]);
 
   async function resolvePending(participantId: string, action: "admit" | "reject") {
     const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
