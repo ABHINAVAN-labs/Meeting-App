@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ConnectionQuality,
@@ -28,6 +28,7 @@ type RemoteTile = {
   name: string;
   role: string;
   publication?: RemoteTrackPublication;
+  screenSharePublication?: RemoteTrackPublication;
   audioPublication?: RemoteTrackPublication;
   stream?: MediaStream;
   connectionQuality: ConnectionQuality;
@@ -177,6 +178,9 @@ const DEFAULT_HOST_CONTROLS: HostControls = {
 const POLL_FALLBACK_INTERVAL_MS = 10_000;
 const TOKEN_REFRESH_SKEW_SECONDS = 60;
 const TOKEN_REFRESH_MIN_DELAY_MS = 15_000;
+const SHARE_ZOOM_MIN = 1;
+const SHARE_ZOOM_MAX = 2;
+const SHARE_ZOOM_STEP = 0.25;
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
@@ -255,7 +259,19 @@ function buildAiContext(messages: AiChatMessage[]) {
   };
 }
 
-function RemoteVideo({ publication, stream }: { publication?: RemoteTrackPublication; stream?: MediaStream }) {
+function RemoteVideo({
+  publication,
+  stream,
+  unmirrored = false,
+  className,
+  style
+}: {
+  publication?: RemoteTrackPublication;
+  stream?: MediaStream;
+  unmirrored?: boolean;
+  className?: string;
+  style?: CSSProperties;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -278,7 +294,16 @@ function RemoteVideo({ publication, stream }: { publication?: RemoteTrackPublica
     };
   }, [publication?.videoTrack, stream]);
 
-  return <video ref={videoRef} autoPlay playsInline suppressHydrationWarning />;
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      suppressHydrationWarning
+      className={className}
+      style={unmirrored ? { transform: "none", ...(style ?? {}) } : style}
+    />
+  );
 }
 
 function formatUnknownError(error: unknown) {
@@ -413,6 +438,11 @@ export default function MeetingRoomPage() {
   const [qualityProfile, setQualityProfile] = useState<QualityProfileName>("lecture");
   const [selfConnectionQuality, setSelfConnectionQuality] = useState<ConnectionQuality>(ConnectionQuality.Excellent);
   const [studentGalleryPage, setStudentGalleryPage] = useState(1);
+  const [screenShareEnabled, setScreenShareEnabled] = useState(false);
+  const [isShareFocusOpen, setIsShareFocusOpen] = useState(false);
+  const [shareZoomLevel, setShareZoomLevel] = useState(SHARE_ZOOM_MIN);
+  const [sharePanOffset, setSharePanOffset] = useState({ x: 0, y: 0 });
+  const [isShareDragging, setIsShareDragging] = useState(false);
 
   const participantIdRef = useRef("");
   const selfRoleRef = useRef<ParticipantRole | null>(null);
@@ -449,6 +479,9 @@ export default function MeetingRoomPage() {
   const participantsMenuRef = useRef<HTMLDivElement | null>(null);
   const tokenRefreshTimerRef = useRef<number | null>(null);
   const livekitTokenRef = useRef("");
+  const shareViewportRef = useRef<HTMLDivElement | null>(null);
+  const sharePointerIdRef = useRef<number | null>(null);
+  const shareDragStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -816,9 +849,17 @@ export default function MeetingRoomPage() {
 
   function mapParticipant(participant: RemoteParticipant): RemoteTile {
     const pubs = [...participant.trackPublications.values()] as RemoteTrackPublication[];
-    
+
     const videoPubs = pubs.filter((pub) => pub.kind === Track.Kind.Video);
-    const videoPub = videoPubs.find((pub) => pub.isSubscribed && pub.videoTrack) ?? videoPubs[0];
+    const screenSharePublication =
+      videoPubs.find(
+        (pub) => pub.source === Track.Source.ScreenShare && pub.isSubscribed && pub.videoTrack
+      ) ?? videoPubs.find((pub) => pub.source === Track.Source.ScreenShare);
+    const videoPub =
+      videoPubs.find((pub) => pub.source === Track.Source.Camera && pub.isSubscribed && pub.videoTrack) ??
+      videoPubs.find((pub) => pub.source === Track.Source.Camera) ??
+      videoPubs.find((pub) => pub.isSubscribed && pub.videoTrack) ??
+      videoPubs[0];
 
     const audioPubs = pubs.filter((pub) => pub.kind === Track.Kind.Audio);
     const audioPub = audioPubs.find((pub) => pub.isSubscribed && pub.audioTrack) ?? audioPubs[0];
@@ -838,6 +879,7 @@ export default function MeetingRoomPage() {
       name: participant.name || participant.identity,
       role,
       publication: videoPub,
+      screenSharePublication,
       audioPublication: audioPub,
       connectionQuality: participant.connectionQuality,
     };
@@ -853,7 +895,10 @@ export default function MeetingRoomPage() {
   async function attachLocalVideo(room: Room) {
     const pubs = [...room.localParticipant.trackPublications.values()] as LocalTrackPublication[];
     const videoPubs = pubs.filter((pub) => pub.kind === Track.Kind.Video);
-    const publication = videoPubs.find((pub) => pub.track) ?? videoPubs[0];
+    const publication =
+      videoPubs.find((pub) => pub.source === Track.Source.Camera && pub.track) ??
+      videoPubs.find((pub) => pub.track) ??
+      videoPubs[0];
 
     const localTrack = publication?.videoTrack;
     if (localTrack && localVideoRef.current) {
@@ -871,6 +916,107 @@ export default function MeetingRoomPage() {
 
   function canPublishLocalTracks(room: Room) {
     return room.state === ConnectionState.Connected;
+  }
+
+  function hasActiveLocalScreenShare(room: Room) {
+    const pubs = [...room.localParticipant.trackPublications.values()] as LocalTrackPublication[];
+    return pubs.some(
+      (pub) => pub.source === Track.Source.ScreenShare && Boolean(pub.track) && !pub.isMuted
+    );
+  }
+
+  function syncLocalScreenShareState(room: Room) {
+    setScreenShareEnabled(hasActiveLocalScreenShare(room));
+  }
+
+  function clampSharePan(nextX: number, nextY: number, zoom: number) {
+    if (zoom <= SHARE_ZOOM_MIN) {
+      return { x: 0, y: 0 };
+    }
+
+    const viewport = shareViewportRef.current;
+    if (!viewport) {
+      return { x: nextX, y: nextY };
+    }
+
+    const maxX = ((zoom - 1) * viewport.clientWidth) / 2;
+    const maxY = ((zoom - 1) * viewport.clientHeight) / 2;
+
+    return {
+      x: Math.min(maxX, Math.max(-maxX, nextX)),
+      y: Math.min(maxY, Math.max(-maxY, nextY))
+    };
+  }
+
+  function openShareFocus() {
+    setShareZoomLevel(SHARE_ZOOM_MIN);
+    setSharePanOffset({ x: 0, y: 0 });
+    setIsShareDragging(false);
+    setIsShareFocusOpen(true);
+  }
+
+  function closeShareFocus() {
+    setIsShareDragging(false);
+    setIsShareFocusOpen(false);
+    setShareZoomLevel(SHARE_ZOOM_MIN);
+    setSharePanOffset({ x: 0, y: 0 });
+  }
+
+  function changeShareZoom(direction: "in" | "out") {
+    setShareZoomLevel((current) => {
+      const delta = direction === "in" ? SHARE_ZOOM_STEP : -SHARE_ZOOM_STEP;
+      const nextZoom = Math.min(SHARE_ZOOM_MAX, Math.max(SHARE_ZOOM_MIN, Number((current + delta).toFixed(2))));
+      setSharePanOffset((currentPan) => clampSharePan(currentPan.x, currentPan.y, nextZoom));
+      return nextZoom;
+    });
+  }
+
+  function resetShareFocusView() {
+    setShareZoomLevel(SHARE_ZOOM_MIN);
+    setSharePanOffset({ x: 0, y: 0 });
+  }
+
+  function handleSharePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (shareZoomLevel <= SHARE_ZOOM_MIN) {
+      return;
+    }
+
+    sharePointerIdRef.current = event.pointerId;
+    shareDragStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      panX: sharePanOffset.x,
+      panY: sharePanOffset.y
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsShareDragging(true);
+  }
+
+  function handleSharePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!isShareDragging || sharePointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - shareDragStartRef.current.x;
+    const deltaY = event.clientY - shareDragStartRef.current.y;
+    const next = clampSharePan(
+      shareDragStartRef.current.panX + deltaX,
+      shareDragStartRef.current.panY + deltaY,
+      shareZoomLevel
+    );
+    setSharePanOffset(next);
+  }
+
+  function handleSharePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (sharePointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    sharePointerIdRef.current = null;
+    setIsShareDragging(false);
   }
 
   function updateMediaPrefs(nextCameraEnabled = cameraEnabledRef.current, nextMicEnabled = micEnabledRef.current) {
@@ -1037,6 +1183,7 @@ export default function MeetingRoomPage() {
       .on(RoomEvent.Disconnected, (reason) => {
         clearTokenRefreshTimer();
         livekitTokenRef.current = "";
+        setScreenShareEnabled(false);
         if (!isLeavingRef.current && !isExpectedDisconnect(reason)) {
           console.warn("LiveKit disconnected", {
             reason,
@@ -1057,12 +1204,30 @@ export default function MeetingRoomPage() {
       })
       .on(RoomEvent.ParticipantConnected, () => refreshRemoteParticipants(room))
       .on(RoomEvent.ParticipantDisconnected, () => refreshRemoteParticipants(room))
-      .on(RoomEvent.TrackPublished, () => refreshRemoteParticipants(room))
-      .on(RoomEvent.TrackUnpublished, () => refreshRemoteParticipants(room))
-      .on(RoomEvent.TrackSubscribed, () => refreshRemoteParticipants(room))
-      .on(RoomEvent.TrackUnsubscribed, () => refreshRemoteParticipants(room))
-      .on(RoomEvent.TrackMuted, () => refreshRemoteParticipants(room))
-      .on(RoomEvent.TrackUnmuted, () => refreshRemoteParticipants(room));
+      .on(RoomEvent.TrackPublished, () => {
+        refreshRemoteParticipants(room);
+        syncLocalScreenShareState(room);
+      })
+      .on(RoomEvent.TrackUnpublished, () => {
+        refreshRemoteParticipants(room);
+        syncLocalScreenShareState(room);
+      })
+      .on(RoomEvent.TrackSubscribed, () => {
+        refreshRemoteParticipants(room);
+        syncLocalScreenShareState(room);
+      })
+      .on(RoomEvent.TrackUnsubscribed, () => {
+        refreshRemoteParticipants(room);
+        syncLocalScreenShareState(room);
+      })
+      .on(RoomEvent.TrackMuted, () => {
+        refreshRemoteParticipants(room);
+        syncLocalScreenShareState(room);
+      })
+      .on(RoomEvent.TrackUnmuted, () => {
+        refreshRemoteParticipants(room);
+        syncLocalScreenShareState(room);
+      });
 
     (window as any).__room = room;
 
@@ -1120,6 +1285,7 @@ export default function MeetingRoomPage() {
       updateMediaPrefs(cameraOn, micOn);
       setCameraEnabled(cameraOn);
       setMicEnabled(micOn);
+      setScreenShareEnabled(hasActiveLocalScreenShare(room));
       setCameraStatus("active");
       if (!cameraOn && !micOn) {
         setAccessError("Connected, but no camera/mic device found. You can still stay in the room.");
@@ -1184,6 +1350,7 @@ export default function MeetingRoomPage() {
 
     roomRef.current?.disconnect();
     roomRef.current = null;
+    setScreenShareEnabled(false);
     stopLocalPreviewCamera();
     stopLocalPreviewMic();
   }
@@ -1366,6 +1533,32 @@ export default function MeetingRoomPage() {
 
     updateMediaPrefs(cameraEnabled, micOn);
     setMicEnabled(micOn);
+  }
+
+  async function toggleScreenShare() {
+    if (selfRole !== "teacher") {
+      return;
+    }
+
+    const room = roomRef.current;
+    if (!room || !canPublishLocalTracks(room)) {
+      setAccessError("Connect to the room before starting screen share.");
+      return;
+    }
+
+    const next = !screenShareEnabled;
+    try {
+      await room.localParticipant.setScreenShareEnabled(next);
+      setScreenShareEnabled(next);
+      setAccessError("");
+      refreshRemoteParticipants(room);
+    } catch (error) {
+      const details = formatUnknownError(error);
+      if (!details.message.includes("Abort handler called")) {
+        setAccessError(next ? `Screen share unavailable: ${details.message}` : `Could not stop screen share: ${details.message}`);
+      }
+      setScreenShareEnabled(hasActiveLocalScreenShare(room));
+    }
   }
 
   const syncRoomState = useCallback(async (source: "poll" | "event") => {
@@ -1691,6 +1884,11 @@ export default function MeetingRoomPage() {
   }
 
   const teacherRemote = remoteParticipants.find((participant) => participant.role === "teacher");
+  const teacherScreenShare = remoteParticipants.find(
+    (participant) =>
+      participant.role === "teacher" &&
+      Boolean(participant.screenSharePublication?.videoTrack || participant.screenSharePublication)
+  );
   const studentRemotes = remoteParticipants.filter((participant) => participant.role !== "teacher");
   const selfStudentParticipant =
     selfRole === "student"
@@ -1769,6 +1967,31 @@ export default function MeetingRoomPage() {
   const clockLabel = `${clockNow.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${clockNow.toLocaleDateString([], { weekday: "short" })}`;
   const isStudentAiChatDisabled = selfRole === "student" && hostControls.vivaTimeEnabled;
   const isStudentMeetingChatDisabled = selfRole === "student" && !hostControls.meetingChatEnabled;
+  const canStudentFocusShare =
+    selfRole === "student" &&
+    Boolean(teacherScreenShare?.screenSharePublication?.videoTrack || teacherScreenShare?.screenSharePublication);
+  const shareTransform = `translate(${sharePanOffset.x}px, ${sharePanOffset.y}px) scale(${shareZoomLevel})`;
+
+  useEffect(() => {
+    if (!canStudentFocusShare && isShareFocusOpen) {
+      closeShareFocus();
+    }
+  }, [canStudentFocusShare, isShareFocusOpen]);
+
+  useEffect(() => {
+    if (!isShareFocusOpen) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeShareFocus();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isShareFocusOpen]);
 
   return (
     <main className="entry-shell room-shell">
@@ -2078,14 +2301,34 @@ export default function MeetingRoomPage() {
             </article>
           ) : teacherRemote ? (
             <article className="participant-card teacher-tile" key={teacherRemote.id}>
-              <p>{teacherRemote.name} ({teacherRemote.role})<QualityDot quality={teacherRemote.connectionQuality} /></p>
-              <div className="participant-video">
+              <p>
+                {teacherRemote.name} ({teacherRemote.role})
+                {teacherScreenShare ? " sharing screen" : ""}
+                <QualityDot quality={teacherRemote.connectionQuality} />
+              </p>
+              <div className={`participant-video ${canStudentFocusShare ? "share-focus-enabled" : ""}`}>
                 <RemoteAudio publication={teacherRemote.audioPublication} />
-                {teacherRemote.publication?.videoTrack || teacherRemote.stream ? (
+                {teacherScreenShare?.screenSharePublication?.videoTrack || teacherScreenShare?.screenSharePublication ? (
+                  <RemoteVideo
+                    publication={teacherScreenShare.screenSharePublication}
+                    stream={teacherScreenShare.stream}
+                    unmirrored
+                  />
+                ) : teacherRemote.publication?.videoTrack || teacherRemote.stream ? (
                   <RemoteVideo publication={teacherRemote.publication} stream={teacherRemote.stream} />
                 ) : (
                   <div className="participant-placeholder">Connected without video</div>
                 )}
+                {canStudentFocusShare ? (
+                  <button
+                    type="button"
+                    className="share-focus-button"
+                    aria-label="Fullscreen shared screen"
+                    onClick={openShareFocus}
+                  >
+                    Fullscreen
+                  </button>
+                ) : null}
               </div>
             </article>
           ) : null}
@@ -2196,6 +2439,23 @@ export default function MeetingRoomPage() {
               {!micEnabled ? <path d="M5 5l14 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" /> : null}
             </svg>
           </button>
+          {selfRole === "teacher" ? (
+            <button
+              aria-label={screenShareEnabled ? "Stop screen share" : "Start screen share"}
+              className={`room-icon-button screen-share-icon-button ${screenShareEnabled ? "screen-on" : "screen-off"}`}
+              title={screenShareEnabled ? "Stop screen share" : "Start screen share"}
+              type="button"
+              onClick={toggleScreenShare}
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="3.5" y="4.5" width="17" height="12" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="2" />
+                <path d="M8 20h8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                <path d="M12 16.5V20" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                <path d="M12 8.5v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                <path d="M10 10.5h4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+              </svg>
+            </button>
+          ) : null}
           {selfRole === "student" ? (
             <button
               aria-label={isHandRaised ? "Lower hand" : "Raise hand"}
@@ -2361,6 +2621,65 @@ export default function MeetingRoomPage() {
           </div>
         </section>
       </div>
+      {isShareFocusOpen && canStudentFocusShare ? (
+        <div
+          className="share-focus-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Focused shared screen"
+          onClick={closeShareFocus}
+        >
+          <div className="share-focus-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="share-focus-toolbar">
+              <span>Shared Screen</span>
+              <div className="share-focus-actions">
+                <button
+                  type="button"
+                  aria-label="Zoom out shared screen"
+                  onClick={() => changeShareZoom("out")}
+                  disabled={shareZoomLevel <= SHARE_ZOOM_MIN}
+                >
+                  -
+                </button>
+                <button
+                  type="button"
+                  aria-label="Zoom in shared screen"
+                  onClick={() => changeShareZoom("in")}
+                  disabled={shareZoomLevel >= SHARE_ZOOM_MAX}
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  aria-label="Reset shared screen zoom and position"
+                  onClick={resetShareFocusView}
+                >
+                  Reset
+                </button>
+                <button type="button" aria-label="Close focused shared screen" onClick={closeShareFocus}>
+                  Close
+                </button>
+              </div>
+            </div>
+            <div
+              ref={shareViewportRef}
+              className={`share-focus-viewport${isShareDragging ? " dragging" : ""}`}
+              onPointerDown={handleSharePointerDown}
+              onPointerMove={handleSharePointerMove}
+              onPointerUp={handleSharePointerUp}
+              onPointerCancel={handleSharePointerUp}
+            >
+              <RemoteVideo
+                publication={teacherScreenShare?.screenSharePublication}
+                stream={teacherScreenShare?.stream}
+                unmirrored
+                className="share-focus-video"
+                style={{ transform: shareTransform }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
