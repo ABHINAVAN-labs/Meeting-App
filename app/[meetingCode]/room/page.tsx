@@ -689,6 +689,11 @@ export default function MeetingRoomPage() {
   }
 
   function toggleAiMicInput() {
+    if (isStudentAiChatDisabled) {
+      setAiError("AI Chat disabled while Viva-Time is active.");
+      return;
+    }
+
     const SpeechRecognitionCtor =
       (window as unknown as { SpeechRecognition?: new () => typeof aiSpeechRecognitionRef.current; webkitSpeechRecognition?: new () => typeof aiSpeechRecognitionRef.current })
         .SpeechRecognition ??
@@ -1556,10 +1561,15 @@ export default function MeetingRoomPage() {
       void turnCameraOnFromHostControl();
     }
 
-    if (hostControls.vivaTimeEnabled && aiSending) {
-      cancelAiRequest();
+    if (hostControls.vivaTimeEnabled) {
+      if (aiSending) {
+        cancelAiRequest();
+      }
+      if (aiMicListening) {
+        aiSpeechRecognitionRef.current?.stop();
+      }
     }
-  }, [aiSending, cameraEnabled, hostControls.forceStudentCamerasOn, hostControls.muteAllRequestId, hostControls.vivaTimeEnabled, micEnabled, selfRole]);
+  }, [aiMicListening, aiSending, cameraEnabled, hostControls.forceStudentCamerasOn, hostControls.muteAllRequestId, hostControls.vivaTimeEnabled, micEnabled, selfRole]);
 
   useEffect(() => {
     if (!readableMeetingCode) {
@@ -1885,7 +1895,12 @@ export default function MeetingRoomPage() {
 
       <div className="room-cards-layout">
         <section className="room-side-chat-card room-ai-chat-card glass-panel" aria-label="AI Chat card">
-          <div className="room-ai-chat">
+          <div className="room-ai-chat" aria-disabled={isStudentAiChatDisabled}>
+            {isStudentAiChatDisabled ? (
+              <div className="room-sr-only" aria-live="polite">
+                AI chat disabled while Viva-Time is active.
+              </div>
+            ) : null}
             <div className="room-ai-chat-header">
               <p>AI Chat</p>
               {aiMessages.length > 0 ? (
@@ -1894,6 +1909,16 @@ export default function MeetingRoomPage() {
                 </button>
               ) : null}
             </div>
+            <div className={`room-ai-chat-lock-shell${isStudentAiChatDisabled ? " viva-locked" : ""}`}>
+              <div className="room-ai-chat-lock-overlay" role="presentation" aria-hidden="true">
+                <div className="room-ai-chat-lock-badge">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M7.5 10V7.5a4.5 4.5 0 1 1 9 0V10" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                    <rect x="5" y="10" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" strokeWidth="2" />
+                  </svg>
+                  <span>Viva-Time active</span>
+                </div>
+              </div>
             <div className="room-ai-chat-thread" aria-live="polite">
               {aiMessages.length === 0 ? <span className="room-ai-chat-empty">Ask anything about the class.</span> : null}
               {aiMessages.map((message) => (
@@ -1989,47 +2014,42 @@ export default function MeetingRoomPage() {
               }}
             >
               <div className="room-ai-chat-input-wrap">
-                {isStudentAiChatDisabled ? (
-                  <div className="room-ai-chat-disabled">AI Chat has been Disabled.</div>
-                ) : (
-                  <>
-                    <input
-                      type="text"
-                      value={aiInput}
-                      onChange={(event) => setAiInput(event.target.value)}
-                      placeholder="Type your message..."
-                      aria-label="Type a message for AI chat"
-                    />
-                    <div className="room-ai-chat-input-icons">
-                      <button
-                        type="button"
-                        className={`room-ai-chat-inline-icon mic ${aiMicListening ? "active" : ""}`}
-                        aria-label={aiMicListening ? "Stop microphone input" : "Use microphone input"}
-                        onClick={toggleAiMicInput}
-                        disabled={aiSending}
-                      >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M12 14.5c1.7 0 3-1.3 3-3V6c0-1.7-1.3-3-3-3S9 4.3 9 6v5.5c0 1.7 1.3 3 3 3Z" />
-                          <path d="M18 11.5c0 3.1-2.4 5.5-6 5.5s-6-2.4-6-5.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-                          <path d="M12 17v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-                          <path d="M9 21h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-                        </svg>
-                      </button>
-                      {aiSending ? (
-                        <button
-                          type="button"
-                          className="room-ai-chat-inline-icon stop"
-                          aria-label="Cancel AI request"
-                          onClick={cancelAiRequest}
-                        >
-                          <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <rect x="8" y="8" width="8" height="8" rx="1.6" />
-                          </svg>
-                        </button>
-                      ) : null}
-                    </div>
-                  </>
-                )}
+                <input
+                  type="text"
+                  value={aiInput}
+                  onChange={(event) => setAiInput(event.target.value)}
+                  placeholder="Type your message..."
+                  aria-label="Type a message for AI chat"
+                  disabled={isStudentAiChatDisabled}
+                />
+                <div className="room-ai-chat-input-icons">
+                  <button
+                    type="button"
+                    className={`room-ai-chat-inline-icon mic ${aiMicListening ? "active" : ""}`}
+                    aria-label={aiMicListening ? "Stop microphone input" : "Use microphone input"}
+                    onClick={toggleAiMicInput}
+                    disabled={aiSending || isStudentAiChatDisabled}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 14.5c1.7 0 3-1.3 3-3V6c0-1.7-1.3-3-3-3S9 4.3 9 6v5.5c0 1.7 1.3 3 3 3Z" />
+                      <path d="M18 11.5c0 3.1-2.4 5.5-6 5.5s-6-2.4-6-5.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                      <path d="M12 17v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                      <path d="M9 21h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+                    </svg>
+                  </button>
+                  {aiSending ? (
+                    <button
+                      type="button"
+                      className="room-ai-chat-inline-icon stop"
+                      aria-label="Cancel AI request"
+                      onClick={cancelAiRequest}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="8" y="8" width="8" height="8" rx="1.6" />
+                      </svg>
+                    </button>
+                  ) : null}
+                </div>
               </div>
               {!aiSending ? (
                 <button type="submit" disabled={isStudentAiChatDisabled || aiInput.trim().length === 0 || aiCooldownSeconds > 0}>
@@ -2037,6 +2057,7 @@ export default function MeetingRoomPage() {
                 </button>
               ) : null}
             </form>
+            </div>
           </div>
         </section>
 

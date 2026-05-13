@@ -1412,6 +1412,70 @@ h1 {
   min-height: 0;
 }
 
+.room-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.room-ai-chat-lock-shell {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
+  min-height: 0;
+}
+
+.room-ai-chat-lock-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(9, 11, 18, 0.42);
+  pointer-events: none;
+}
+
+.room-ai-chat-lock-shell.viva-locked .room-ai-chat-lock-overlay {
+  display: flex;
+}
+
+.room-ai-chat-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  color: #fff2d6;
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(12, 12, 12, 0.72);
+}
+
+.room-ai-chat-lock-badge svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+}
+
+.room-ai-chat-lock-shell.viva-locked .room-ai-chat-thread,
+.room-ai-chat-lock-shell.viva-locked .room-ai-chat-form,
+.room-ai-chat-lock-shell.viva-locked .room-ai-chat-verbosity,
+.room-ai-chat-lock-shell.viva-locked .room-ai-chat-error,
+.room-ai-chat-lock-shell.viva-locked .room-ai-chat-cooldown {
+  filter: blur(4px);
+  opacity: 0.72;
+  will-change: filter, opacity;
+}
+
 .room-ai-chat-header {
   display: flex;
   align-items: center;
