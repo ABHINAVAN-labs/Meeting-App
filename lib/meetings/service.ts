@@ -294,6 +294,38 @@ export function setParticipantHandRaised(
   return { ok: true };
 }
 
+export function controlParticipantMedia(
+  meetingCode: string,
+  actorParticipantId: string,
+  targetParticipantId: string,
+  media: "camera" | "mic",
+  enabled: boolean
+): { ok: true } | { ok: false; message: string } {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code." };
+  }
+  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+    return { ok: false, message: "Only active teacher can control participant media." };
+  }
+
+  const target = getParticipant(normalizedMeetingCode, targetParticipantId);
+  if (!target || target.status !== "active") {
+    return { ok: false, message: "Active participant not found." };
+  }
+  if (target.role === "teacher") {
+    return { ok: false, message: "Teacher media is not controlled here." };
+  }
+
+  publishEvent(normalizedMeetingCode, {
+    type: "participant-media-control",
+    participantId: targetParticipantId,
+    media,
+    enabled
+  });
+  return { ok: true };
+}
+
 export function sendSignal(
   meetingCode: string,
   fromParticipantId: string,

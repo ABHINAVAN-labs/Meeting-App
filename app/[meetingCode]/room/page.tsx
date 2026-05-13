@@ -416,6 +416,7 @@ export default function MeetingRoomPage() {
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isRaisedHandsPopupOpen, setIsRaisedHandsPopupOpen] = useState(false);
   const [isParticipantsPopupOpen, setIsParticipantsPopupOpen] = useState(false);
+  const [openParticipantMenuId, setOpenParticipantMenuId] = useState("");
   const [isCopiedToastVisible, setIsCopiedToastVisible] = useState(false);
   const [clockNow, setClockNow] = useState(() => new Date());
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
@@ -581,6 +582,7 @@ export default function MeetingRoomPage() {
       }
       if (!participantsMenuRef.current.contains(event.target as Node)) {
         setIsParticipantsPopupOpen(false);
+        setOpenParticipantMenuId("");
       }
     };
 
@@ -1419,6 +1421,35 @@ export default function MeetingRoomPage() {
     setCameraEnabled(cameraOn);
   }
 
+  async function applyTeacherCameraControl(enabled: boolean) {
+    if (enabled) {
+      await turnCameraOnFromHostControl();
+      return;
+    }
+
+    const room = roomRef.current;
+    updateMediaPrefs(false, micEnabled);
+    if (!room || !canPublishLocalTracks(room)) {
+      stopLocalPreviewCamera();
+      setCameraEnabled(false);
+      return;
+    }
+
+    try {
+      await room.localParticipant.setCameraEnabled(false);
+      stopLocalPreviewCamera();
+    } catch (error) {
+      stopLocalPreviewCamera();
+      const details = formatUnknownError(error);
+      if (!details.message.includes("Abort handler called")) {
+        setAccessError(`Camera unavailable: ${details.message}`);
+      }
+    }
+
+    updateMediaPrefs(false, micEnabled);
+    setCameraEnabled(false);
+  }
+
   async function startLocalPreviewCamera() {
     const existingVideo = localPreviewStreamRef.current?.getVideoTracks()[0];
     if (existingVideo) {
@@ -1683,6 +1714,7 @@ export default function MeetingRoomPage() {
         | { type: "participant-left"; participantId: string }
         | { type: "participant-status-updated"; participantId: string; status: ParticipantStatus }
         | { type: "participant-hand-updated"; participantId: string; handRaised: boolean; handRaisedAt: number | null }
+        | { type: "participant-media-control"; participantId: string; media: "camera" | "mic"; enabled: boolean }
         | {
             type: "signal";
             fromParticipantId: string;
@@ -1713,6 +1745,18 @@ export default function MeetingRoomPage() {
 
       if (event.type === "participant-hand-updated") {
         void syncRoomState("event");
+        return;
+      }
+
+      if (event.type === "participant-media-control") {
+        if (event.media === "camera") {
+          if (event.enabled !== cameraEnabled) {
+            void applyTeacherCameraControl(event.enabled);
+          }
+        }
+        if (event.media === "mic" && event.enabled !== micEnabled) {
+          void toggleMic();
+        }
         return;
       }
 
@@ -1845,6 +1889,23 @@ export default function MeetingRoomPage() {
     setActiveStudents((prev) => prev.filter((participant) => participant.id !== participantId));
     setRaisedHands((prev) => prev.filter((participant) => participant.id !== participantId));
     setRemoteParticipants((prev) => prev.filter((participant) => participant.id !== participantId));
+  }
+
+  async function updateParticipantMedia(participantId: string, media: "camera" | "mic", enabled: boolean) {
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/participant-controls`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(actorParticipantId ? { "x-participant-id": actorParticipantId } : {})
+      },
+      body: JSON.stringify({ participantId, media, enabled })
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      setAccessError(payload.message ?? "Could not update participant media.");
+    }
   }
 
   async function copyMeetingLink() {
@@ -2051,7 +2112,14 @@ export default function MeetingRoomPage() {
               aria-label={`Participants: ${activeStudents.length + 1}`}
               aria-expanded={isParticipantsPopupOpen}
               aria-controls="participants-list"
-              onClick={() => setIsParticipantsPopupOpen((prev) => !prev)}
+              onClick={() =>
+                setIsParticipantsPopupOpen((prev) => {
+                  if (prev) {
+                    setOpenParticipantMenuId("");
+                  }
+                  return !prev;
+                })
+              }
             >
               <svg aria-hidden="true" viewBox="0 0 24 24">
                 <path d="M8.5 11.2a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2Zm7 0a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2ZM2.8 20c0-3.3 2.6-6 5.7-6s5.7 2.7 5.7 6v.2H2.8V20Zm11.8.2v-.5a7.5 7.5 0 0 0-1.6-4.6 5.2 5.2 0 0 1 2.5-.6c2.8 0 5.1 2.4 5.1 5.4v.3h-6Z" />
@@ -2065,14 +2133,74 @@ export default function MeetingRoomPage() {
               {activeStudents.length === 0 ? (
                 <p>No active students yet.</p>
               ) : (
-                activeStudents.map((participant) => (
-                  <div key={participant.id} className="participant-menu-row">
-                    <span>{participant.displayName}</span>
-                    <button type="button" onClick={() => removeFromRoom(participant.id)}>
-                      Remove
-                    </button>
-                  </div>
-                ))
+                activeStudents.map((participant) => {
+                  const remoteParticipant = remoteParticipants.find((remote) => remote.id === participant.id);
+                  const cameraOn = Boolean(
+                    (remoteParticipant?.publication?.videoTrack && !remoteParticipant.publication.isMuted) ||
+                      remoteParticipant?.stream
+                  );
+                  const micOn = Boolean(remoteParticipant?.audioPublication?.audioTrack && !remoteParticipant.audioPublication.isMuted);
+
+                  return (
+                    <div key={participant.id} className="participant-menu-row">
+                      <span>{participant.displayName}</span>
+                      <div className={`participant-actions-menu${openParticipantMenuId === participant.id ? " open" : ""}`}>
+                        <button
+                          className="participant-actions-button"
+                          type="button"
+                          aria-label={`Open options for ${participant.displayName}`}
+                          aria-expanded={openParticipantMenuId === participant.id}
+                          onClick={() =>
+                            setOpenParticipantMenuId((currentId) => (currentId === participant.id ? "" : participant.id))
+                          }
+                        >
+                          <span className="participant-actions-dots" aria-hidden="true">
+                            <span />
+                            <span />
+                            <span />
+                          </span>
+                        </button>
+                        <div className="participant-actions-dropdown" aria-hidden={openParticipantMenuId !== participant.id}>
+                          <button
+                            type="button"
+                            aria-label={cameraOn ? `Turn off camera for ${participant.displayName}` : `Turn on camera for ${participant.displayName}`}
+                            onClick={() => void updateParticipantMedia(participant.id, "camera", !cameraOn)}
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24">
+                              <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h7A2.5 2.5 0 0 1 16 7.5v1.1l3.4-2.1A1 1 0 0 1 21 7.4v9.2a1 1 0 0 1-1.6.8L16 15.3v1.2a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 4 16.5v-9Z" />
+                              {!cameraOn ? <path d="M5 5l14 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" /> : null}
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={micOn ? `Turn off mic for ${participant.displayName}` : `Turn on mic for ${participant.displayName}`}
+                            onClick={() => void updateParticipantMedia(participant.id, "mic", !micOn)}
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24">
+                              <path d="M12 15a4 4 0 0 0 4-4V7a4 4 0 1 0-8 0v4a4 4 0 0 0 4 4Zm7-4a1 1 0 0 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V21H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-3.08A7 7 0 0 0 19 11Z" />
+                              {!micOn ? <path d="M5 5l14 14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" /> : null}
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${participant.displayName} from call`}
+                            onClick={() => void removeFromRoom(participant.id)}
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 24 24">
+                              <circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" strokeWidth="2" />
+                              <path d="M8 12h8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.2" />
+                            </svg>
+                          </button>
+                          <button className="participant-actions-close" type="button" aria-label="Close action">
+                            <svg aria-hidden="true" viewBox="0 0 24 24">
+                              <path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.8" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
