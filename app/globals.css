@@ -2594,9 +2594,131 @@ h1 {
   width: min(600px, 100%);
 }
 
+.teacher-screen-share-tile {
+  width: min(840px, 100%);
+  margin: 0 auto 10px;
+}
+
+.teacher-screen-share-tile .participant-video,
+.teacher-screen-share-tile .participant-placeholder {
+  height: 300px;
+}
+
+.teacher-screen-share-tile .participant-video video {
+  transform: none;
+}
+
 .teacher-tile .participant-video,
 .teacher-tile .participant-placeholder {
   height: 260px;
+}
+
+.teacher-tile .participant-video.share-focus-enabled .share-focus-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(7, 11, 23, 0.72);
+  color: #f7fafc;
+  font-size: 0.78rem;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.teacher-tile .participant-video.share-focus-enabled:hover .share-focus-button,
+.teacher-tile .participant-video.share-focus-enabled:focus-within .share-focus-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .teacher-tile .participant-video.share-focus-enabled .share-focus-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.share-focus-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 8, 18, 0.72);
+  padding: clamp(12px, 2.2vw, 24px);
+}
+
+.share-focus-panel {
+  width: min(1200px, calc(100vw - 24px));
+  height: min(78vh, 760px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 14, 26, 0.94);
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.44);
+  overflow: hidden;
+}
+
+.share-focus-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f7fafc;
+  font-weight: 700;
+}
+
+.share-focus-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.share-focus-actions button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7fafc;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.share-focus-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.share-focus-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0a1020;
+  touch-action: none;
+  user-select: none;
+}
+
+.share-focus-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: center center;
+  cursor: grab;
+}
+
+.share-focus-viewport.dragging .share-focus-video {
+  cursor: grabbing;
 }
 
 .student-tile-row {
@@ -2653,7 +2775,10 @@ h1 {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transform: scaleX(-1);
+}
+
+.participant-card.teacher-screen-share-tile .participant-video video {
+  transform: none;
 }
 
 .participant-placeholder {
@@ -2741,6 +2866,18 @@ h1 {
   background: #ffffff;
 }
 
+.room-controls button.screen-share-icon-button.screen-on,
+.meeting-control-nav button.screen-share-icon-button.screen-on {
+  color: #ffffff;
+  background: #111111;
+}
+
+.room-controls button.screen-share-icon-button.screen-off,
+.meeting-control-nav button.screen-share-icon-button.screen-off {
+  color: #111111;
+  background: #ffffff;
+}
+
 .room-controls button.hand-icon-button.hand-on,
 .meeting-control-nav button.hand-icon-button.hand-on {
   color: #ffffff;
@@ -2794,6 +2931,25 @@ h1 {
 
   .room-grid {
     grid-template-columns: 1fr;
+  }
+
+  .teacher-tile .participant-video.share-focus-enabled .share-focus-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .share-focus-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .share-focus-panel {
+    height: min(74vh, 620px);
+  }
+
+  .share-focus-actions {
+    width: 100%;
+    flex-wrap: wrap;
   }
 
   .student-tile-page-grid {
