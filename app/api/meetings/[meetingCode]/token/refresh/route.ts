@@ -1,10 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE_NAME } from "../../../../../lib/meetings/constants";
-import { parseSessionCookie } from "../../../../../lib/meetings/session";
-import { listRoomParticipants } from "../../../../../lib/meetings/service";
-import { normalizeMeetingCode } from "../../../../../lib/meetings/validation";
-import { createLiveKitToken, getLiveKitUrl, LIVEKIT_TOKEN_TTL_SECONDS } from "../../../../../lib/realtime/livekit";
+import { SESSION_COOKIE_NAME } from "../../../../../../lib/meetings/constants";
+import { parseSessionCookie } from "../../../../../../lib/meetings/session";
+import { listRoomParticipants } from "../../../../../../lib/meetings/service";
+import { normalizeMeetingCode } from "../../../../../../lib/meetings/validation";
+import { createLiveKitToken, getLiveKitUrl, LIVEKIT_TOKEN_TTL_SECONDS } from "../../../../../../lib/realtime/livekit";
 
 export async function POST(request: Request, context: { params: Promise<{ meetingCode: string }> }) {
   const { meetingCode } = await context.params;
@@ -15,15 +15,12 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   }
 
   const headerParticipantId = request.headers.get("x-participant-id")?.trim() ?? "";
-
   const cookieStore = await cookies();
   const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
-
   const participants = listRoomParticipants(normalizedCode, headerParticipantId || session?.participantId);
 
   const participantId = headerParticipantId || (session?.meetingCode === normalizedCode ? session.participantId : "");
   const current = participants.find((participant) => participant.id === participantId);
-
   if (!current) {
     return NextResponse.json({ message: "Join this meeting from lobby first." }, { status: 403 });
   }
@@ -37,26 +34,12 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   }
 
   try {
-    const isTeacher = current.role === "teacher";
     const token = await createLiveKitToken({
       meetingCode: normalizedCode,
       participantId: current.id,
       participantName: current.displayName,
       role: current.role
     });
-
-    if (process.env.NODE_ENV !== "production") {
-      console.info("[livekit-policy]", {
-        meetingCode: normalizedCode,
-        participantId: current.id,
-        role: current.role,
-        canPublishData: isTeacher,
-        roomAdmin: isTeacher,
-        canPublishSources: isTeacher
-          ? ["camera", "microphone", "screen_share", "screen_share_audio"]
-          : ["camera", "microphone"]
-      });
-    }
 
     return NextResponse.json({
       token,
