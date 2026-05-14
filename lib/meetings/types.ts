@@ -28,11 +28,74 @@ export type HostControls = {
   meetingChatEnabled: boolean;
 };
 
+export type WhiteboardTool =
+  | "pen"
+  | "highlighter"
+  | "eraser"
+  | "shape-rect"
+  | "shape-circle"
+  | "shape-line"
+  | "text";
+
+export type WhiteboardPoint = {
+  x: number;
+  y: number;
+};
+
+export type WhiteboardStrokeDrawable = {
+  id: string;
+  kind: "stroke";
+  tool: "pen" | "highlighter" | "eraser";
+  color: string;
+  width: number;
+  points: WhiteboardPoint[];
+  createdAt: number;
+};
+
+export type WhiteboardShapeDrawable = {
+  id: string;
+  kind: "shape";
+  tool: "shape-rect" | "shape-circle" | "shape-line";
+  color: string;
+  width: number;
+  start: WhiteboardPoint;
+  end: WhiteboardPoint;
+  createdAt: number;
+};
+
+export type WhiteboardTextDrawable = {
+  id: string;
+  kind: "text";
+  tool: "text";
+  color: string;
+  size: number;
+  point: WhiteboardPoint;
+  text: string;
+  createdAt: number;
+};
+
+export type WhiteboardDrawable = WhiteboardStrokeDrawable | WhiteboardShapeDrawable | WhiteboardTextDrawable;
+
+export type WhiteboardAction =
+  | { type: "draw"; drawable: WhiteboardDrawable }
+  | { type: "undo" }
+  | { type: "redo" }
+  | { type: "clear" };
+
+export type WhiteboardState = {
+  version: number;
+  drawables: WhiteboardDrawable[];
+  lastUpdatedAt: string;
+  history: WhiteboardDrawable[][];
+  future: WhiteboardDrawable[][];
+};
+
 export type Room = {
   meetingCode: string;
   participants: Map<string, Participant>;
   chatMessages: MeetingChatMessage[];
   hostControls: HostControls;
+  whiteboard: WhiteboardState;
 };
 
 export type MeetingEvent =
@@ -41,6 +104,7 @@ export type MeetingEvent =
   | { type: "participant-left"; participantId: string }
   | { type: "participant-status-updated"; participantId: string; status: ParticipantStatus }
   | { type: "participant-hand-updated"; participantId: string; handRaised: boolean; handRaisedAt: number | null }
+  | { type: "whiteboard-updated"; version: number }
   | { type: "participant-media-control"; participantId: string; media: "camera" | "mic"; enabled: boolean }
   | {
       type: "signal";

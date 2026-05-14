@@ -5,9 +5,11 @@ import {
   countRole,
   getHostControls,
   getMeetingChatMessages,
+  getWhiteboard,
   getParticipant,
   getParticipants,
   publishEvent,
+  replaceWhiteboard,
   removeParticipant,
   touchParticipant,
   updateHostControls,
@@ -16,6 +18,19 @@ import {
   upsertParticipant
 } from "./store";
 import type { HostControls, JoinMeetingRequest, MeetingChatMessage, Participant } from "./types";
+import type { WhiteboardAction, WhiteboardDrawable, WhiteboardPoint, WhiteboardState } from "./types";
+
+const WHITEBOARD_MAX_POINTS_PER_STROKE = 500;
+const WHITEBOARD_MAX_DRAWABLES = 600;
+const WHITEBOARD_MAX_HISTORY = 30;
+const WHITEBOARD_MAX_TEXT_CHARS = 200;
+const WHITEBOARD_MIN_TEXT_SIZE = 8;
+const WHITEBOARD_MAX_TEXT_SIZE = 120;
+const WHITEBOARD_MIN_WIDTH = 1;
+const WHITEBOARD_MAX_WIDTH = 30;
+const WHITEBOARD_MIN_COORD = 0;
+const WHITEBOARD_MAX_COORD = 10000;
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
 export type JoinResult =
   | { ok: true; meetingCode: string; participant: Participant; status: Participant["status"] }
@@ -157,6 +172,196 @@ export function leaveMeeting(meetingCode: string, participantId: string): void {
 function assertActiveTeacher(meetingCode: string, actorParticipantId: string): boolean {
   const actor = getParticipant(meetingCode, actorParticipantId);
   return Boolean(actor && actor.role === "teacher" && actor.status === "active");
+}
+
+function isValidPoint(point: WhiteboardPoint): boolean {
+  return (
+    Number.isFinite(point.x) &&
+    Number.isFinite(point.y) &&
+    point.x >= WHITEBOARD_MIN_COORD &&
+    point.y >= WHITEBOARD_MIN_COORD &&
+    point.x <= WHITEBOARD_MAX_COORD &&
+    point.y <= WHITEBOARD_MAX_COORD
+  );
+}
+
+function sanitizeDrawable(drawable: WhiteboardDrawable): WhiteboardDrawable | null {
+  if (!drawable || typeof drawable !== "object") {
+    return null;
+  }
+  if (typeof drawable.id !== "string" || drawable.id.trim().length < 4 || drawable.id.length > 80) {
+    return null;
+  }
+  if (!Number.isFinite(drawable.createdAt) || drawable.createdAt <= 0) {
+    return null;
+  }
+
+  if (drawable.kind === "stroke") {
+    if (drawable.tool !== "pen" && drawable.tool !== "highlighter" && drawable.tool !== "eraser") {
+      return null;
+    }
+    if (!Number.isFinite(drawable.width) || drawable.width < WHITEBOARD_MIN_WIDTH || drawable.width > WHITEBOARD_MAX_WIDTH) {
+      return null;
+    }
+    if (
+      !Array.isArray(drawable.points) ||
+      drawable.points.length < 2 ||
+      drawable.points.length > WHITEBOARD_MAX_POINTS_PER_STROKE
+    ) {
+      return null;
+    }
+    if (!drawable.points.every(isValidPoint)) {
+      return null;
+    }
+    if (drawable.tool !== "eraser" && !HEX_COLOR_PATTERN.test(drawable.color)) {
+      return null;
+    }
+
+    return {
+      ...drawable,
+      color: drawable.tool === "eraser" ? "#FFFFFF" : drawable.color.toUpperCase(),
+      points: drawable.points.map((point) => ({ x: point.x, y: point.y }))
+    };
+  }
+
+  if (drawable.kind === "shape") {
+    if (drawable.tool !== "shape-rect" && drawable.tool !== "shape-circle" && drawable.tool !== "shape-line") {
+      return null;
+    }
+    if (!HEX_COLOR_PATTERN.test(drawable.color)) {
+      return null;
+    }
+    if (!Number.isFinite(drawable.width) || drawable.width < WHITEBOARD_MIN_WIDTH || drawable.width > WHITEBOARD_MAX_WIDTH) {
+      return null;
+    }
+    if (!isValidPoint(drawable.start) || !isValidPoint(drawable.end)) {
+      return null;
+    }
+    return {
+      ...drawable,
+      color: drawable.color.toUpperCase(),
+      start: { x: drawable.start.x, y: drawable.start.y },
+      end: { x: drawable.end.x, y: drawable.end.y }
+    };
+  }
+
+  if (drawable.kind === "text") {
+    if (drawable.tool !== "text") {
+      return null;
+    }
+    if (!HEX_COLOR_PATTERN.test(drawable.color)) {
+      return null;
+    }
+    if (!Number.isFinite(drawable.size) || drawable.size < WHITEBOARD_MIN_TEXT_SIZE || drawable.size > WHITEBOARD_MAX_TEXT_SIZE) {
+      return null;
+    }
+    if (!isValidPoint(drawable.point)) {
+      return null;
+    }
+    const normalizedText = typeof drawable.text === "string" ? drawable.text.trim() : "";
+    if (!normalizedText || normalizedText.length > WHITEBOARD_MAX_TEXT_CHARS) {
+      return null;
+    }
+    return {
+      ...drawable,
+      color: drawable.color.toUpperCase(),
+      point: { x: drawable.point.x, y: drawable.point.y },
+      text: normalizedText
+    };
+  }
+
+  return null;
+}
+
+export function getMeetingWhiteboard(
+  meetingCode: string,
+  participantId: string
+): { ok: true; whiteboard: WhiteboardState } | { ok: false; message: string } {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code." };
+  }
+
+  const participant = getParticipant(normalizedMeetingCode, participantId);
+  if (!participant || participant.status !== "active" || participant.role !== "teacher") {
+    return { ok: false, message: "Only active teacher can view whiteboard." };
+  }
+
+  return { ok: true, whiteboard: getWhiteboard(normalizedMeetingCode) };
+}
+
+export function applyMeetingWhiteboardAction(
+  meetingCode: string,
+  participantId: string,
+  action: WhiteboardAction
+): { ok: true; whiteboard: WhiteboardState } | { ok: false; message: string; status?: number } {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code.", status: 400 };
+  }
+
+  if (!assertActiveTeacher(normalizedMeetingCode, participantId)) {
+    return { ok: false, message: "Only active teacher can update whiteboard.", status: 403 };
+  }
+
+  const current = getWhiteboard(normalizedMeetingCode);
+  const nextDrawables = [...current.drawables];
+  const nextHistory = [...current.history];
+  const nextFuture = [...current.future];
+
+  if (action.type === "draw") {
+    const sanitized = sanitizeDrawable(action.drawable);
+    if (!sanitized) {
+      return { ok: false, message: "Invalid whiteboard drawable.", status: 400 };
+    }
+    nextHistory.push(nextDrawables);
+    nextDrawables.push(sanitized);
+    const whiteboard = replaceWhiteboard(
+      normalizedMeetingCode,
+      nextDrawables.slice(-WHITEBOARD_MAX_DRAWABLES),
+      nextHistory.slice(-WHITEBOARD_MAX_HISTORY),
+      []
+    );
+    return { ok: true, whiteboard };
+  }
+
+  if (action.type === "undo") {
+    if (nextHistory.length === 0) {
+      return { ok: true, whiteboard: current };
+    }
+    const previous = nextHistory.pop() ?? [];
+    nextFuture.push(nextDrawables);
+    const whiteboard = replaceWhiteboard(
+      normalizedMeetingCode,
+      previous.slice(-WHITEBOARD_MAX_DRAWABLES),
+      nextHistory.slice(-WHITEBOARD_MAX_HISTORY),
+      nextFuture.slice(-WHITEBOARD_MAX_HISTORY)
+    );
+    return { ok: true, whiteboard };
+  }
+
+  if (action.type === "redo") {
+    if (nextFuture.length === 0) {
+      return { ok: true, whiteboard: current };
+    }
+    const restored = nextFuture.pop() ?? [];
+    nextHistory.push(nextDrawables);
+    const whiteboard = replaceWhiteboard(
+      normalizedMeetingCode,
+      restored.slice(-WHITEBOARD_MAX_DRAWABLES),
+      nextHistory.slice(-WHITEBOARD_MAX_HISTORY),
+      nextFuture.slice(-WHITEBOARD_MAX_HISTORY)
+    );
+    return { ok: true, whiteboard };
+  }
+
+  if (action.type === "clear") {
+    nextHistory.push(nextDrawables);
+    const whiteboard = replaceWhiteboard(normalizedMeetingCode, [], nextHistory.slice(-WHITEBOARD_MAX_HISTORY), []);
+    return { ok: true, whiteboard };
+  }
+
+  return { ok: false, message: "Invalid whiteboard action.", status: 400 };
 }
 
 export function approveParticipant(
