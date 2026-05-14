@@ -31,7 +31,7 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
     return NextResponse.json({ message: "handRaised must be boolean." }, { status: 400 });
   }
 
-  const result = setParticipantHandRaised(normalizedCode, actorParticipantId, payload.handRaised);
+  const result = await setParticipantHandRaised(normalizedCode, actorParticipantId, payload.handRaised);
   if (!result.ok) {
     return NextResponse.json({ message: result.message }, { status: 403 });
   }

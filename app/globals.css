@@ -2026,7 +2026,7 @@ h1 {
   border-radius: 20px;
   background: rgba(10, 13, 23, 0.72);
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.24);
-  transform: translateY(20px);
+  transform: translateY(10px);
 }
 .room-meeting-card {
   grid-template-rows: minmax(0, 1fr) auto auto;

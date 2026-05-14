@@ -31,7 +31,7 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
     return NextResponse.json({ message: "participantId is required." }, { status: 400 });
   }
 
-  const result = removeParticipantFromRoom(normalizedCode, actorParticipantId, targetParticipantId);
+  const result = await removeParticipantFromRoom(normalizedCode, actorParticipantId, targetParticipantId);
   if (!result.ok) {
     return NextResponse.json({ message: result.message }, { status: 403 });
   }

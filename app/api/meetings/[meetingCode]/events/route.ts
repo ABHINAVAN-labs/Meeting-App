@@ -25,6 +25,8 @@ export async function GET(_: Request, context: { params: Promise<{ meetingCode: 
     return new Response("Join this meeting from lobby first.", { status: 403 });
   }
 
+  const initialParticipants = await listRoomParticipants(normalizedCode, session.participantId);
+
   let unsubscribe: (() => void) | null = null;
   let keepAlive: ReturnType<typeof setInterval> | null = null;
 
@@ -33,7 +35,7 @@ export async function GET(_: Request, context: { params: Promise<{ meetingCode: 
       const encoder = new TextEncoder();
       const snapshot: MeetingEvent = {
         type: "snapshot",
-        participants: listRoomParticipants(normalizedCode, session.participantId),
+        participants: initialParticipants,
         sessionParticipantId: session.participantId
       };
 

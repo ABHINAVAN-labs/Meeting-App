@@ -15,7 +15,7 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
 
   const headerParticipantId = request.headers.get("x-participant-id")?.trim() ?? "";
   if (headerParticipantId) {
-    leaveMeeting(normalizedCode, headerParticipantId);
+    await leaveMeeting(normalizedCode, headerParticipantId);
     return NextResponse.json({ ok: true });
   }
 
@@ -25,6 +25,6 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
     return NextResponse.json({ ok: true });
   }
 
-  leaveMeeting(normalizedCode, session.participantId);
+  await leaveMeeting(normalizedCode, session.participantId);
   return NextResponse.json({ ok: true });
 }

@@ -1,12 +1,12 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME } from "../../../../../lib/meetings/constants";
-import { sendMeetingChatMessage } from "../../../../../lib/meetings/service";
+import { banParticipantFromRoom } from "../../../../../lib/meetings/service";
 import { parseSessionCookie } from "../../../../../lib/meetings/session";
 import { normalizeMeetingCode } from "../../../../../lib/meetings/validation";
 
-type ChatPayload = {
-  content: string;
+type BanPayload = {
+  participantId: string;
 };
 
 export async function POST(request: Request, context: { params: Promise<{ meetingCode: string }> }) {
@@ -20,17 +20,21 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   const cookieStore = await cookies();
   const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
   const headerParticipantId = request.headers.get("x-participant-id")?.trim() ?? "";
-  const participantId = headerParticipantId || (session?.meetingCode === normalizedCode ? session.participantId : "");
-  if (!participantId) {
+  const actorParticipantId = headerParticipantId || (session?.meetingCode === normalizedCode ? session.participantId : "");
+  if (!actorParticipantId) {
     return NextResponse.json({ message: "Unauthorized for this meeting." }, { status: 403 });
   }
 
-  const payload = (await request.json()) as Partial<ChatPayload>;
-  const result = await sendMeetingChatMessage(normalizedCode, participantId, payload.content ?? "");
-
-  if (!result.ok) {
-    return NextResponse.json({ message: result.message }, { status: 400 });
+  const payload = (await request.json()) as Partial<BanPayload>;
+  const targetParticipantId = payload.participantId?.trim() ?? "";
+  if (!targetParticipantId) {
+    return NextResponse.json({ message: "participantId is required." }, { status: 400 });
   }
 
-  return NextResponse.json({ message: result.message });
+  const result = await banParticipantFromRoom(normalizedCode, actorParticipantId, targetParticipantId);
+  if (!result.ok) {
+    return NextResponse.json({ message: result.message }, { status: 403 });
+  }
+
+  return NextResponse.json({ ok: true });
 }

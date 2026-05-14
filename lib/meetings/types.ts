@@ -1,11 +1,14 @@
 export type ParticipantRole = "student" | "teacher";
 export type ParticipantStatus = "pending" | "active" | "rejected";
+export type JoinIdentityType = "email" | "phone";
 
 export type Participant = {
   id: string;
   displayName: string;
   role: ParticipantRole;
   status: ParticipantStatus;
+  joinIdentityType: JoinIdentityType | null;
+  joinIdentityHash: string | null;
   handRaised: boolean;
   handRaisedAt: number | null;
   joinedAt: number;
@@ -118,4 +121,6 @@ export type JoinMeetingRequest = {
   meetingCode: string;
   displayName: string;
   role: ParticipantRole;
+  identityType?: JoinIdentityType;
+  identityValue?: string;
 };

@@ -1,24 +1,18 @@
-import { randomUUID } from "crypto";
-import { normalizeMeetingCode, normalizeParticipantName } from "./validation";
+import { createHash, randomUUID } from "crypto";
+import { normalizeJoinIdentity, normalizeMeetingCode, normalizeParticipantName } from "./validation";
 import {
   addMeetingChatMessage,
-  countRole,
-  getHostControls,
   getMeetingChatMessages,
   getWhiteboard,
-  getParticipant,
-  getParticipants,
   publishEvent,
   replaceWhiteboard,
-  removeParticipant,
-  touchParticipant,
-  updateHostControls,
-  updateParticipantHandRaised,
-  updateParticipantStatus,
-  upsertParticipant
+  subscribeToRoom
 } from "./store";
+import { getMeetingRepository } from "./repository.factory";
 import type { HostControls, JoinMeetingRequest, MeetingChatMessage, Participant } from "./types";
 import type { WhiteboardAction, WhiteboardDrawable, WhiteboardPoint, WhiteboardState } from "./types";
+
+const meetingRepo = getMeetingRepository();
 
 const WHITEBOARD_MAX_POINTS_PER_STROKE = 500;
 const WHITEBOARD_MAX_DRAWABLES = 600;
@@ -34,9 +28,16 @@ const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
 export type JoinResult =
   | { ok: true; meetingCode: string; participant: Participant; status: Participant["status"] }
-  | { ok: false; message: string };
+  | { ok: false; message: string; status?: number };
 
-export function joinMeeting(payload: JoinMeetingRequest): JoinResult {
+const DEFAULT_HOST_CONTROLS: HostControls = {
+  muteAllRequestId: 0,
+  forceStudentCamerasOn: false,
+  vivaTimeEnabled: false,
+  meetingChatEnabled: false
+};
+
+export async function joinMeeting(payload: JoinMeetingRequest): Promise<JoinResult> {
   const meetingCode = normalizeMeetingCode(payload.meetingCode);
   if (!meetingCode) {
     return { ok: false, message: "Invalid meeting code." };
@@ -46,8 +47,26 @@ export function joinMeeting(payload: JoinMeetingRequest): JoinResult {
   if (!displayName) {
     return { ok: false, message: "Enter a valid name (2-80 chars)." };
   }
-  if (payload.role === "teacher" && countRole(meetingCode, "teacher") >= 1) {
+  if (payload.role === "teacher" && (await meetingRepo.countRole(meetingCode, "teacher")) >= 1) {
     return { ok: false, message: "A teacher is already active in this meeting." };
+  }
+
+  let normalizedIdentity: string | null = null;
+  if (payload.role === "student") {
+    const identityType = payload.identityType;
+    const identityValue = payload.identityValue ?? "";
+    if (identityType !== "email" && identityType !== "phone") {
+      return { ok: false, message: "Student email or phone is required." };
+    }
+    normalizedIdentity = normalizeJoinIdentity(identityType, identityValue);
+    if (!normalizedIdentity) {
+      return { ok: false, message: "Enter a valid email or phone number." };
+    }
+    const identityHash = createHash("sha256").update(normalizedIdentity).digest("hex");
+    const isBanned = await meetingRepo.isIdentityBanned(meetingCode, identityHash);
+    if (isBanned) {
+      return { ok: false, message: "You are not allowed to rejoin this meeting.", status: 403 };
+    }
   }
 
   const now = Date.now();
@@ -56,36 +75,41 @@ export function joinMeeting(payload: JoinMeetingRequest): JoinResult {
     displayName,
     role: payload.role,
     status: payload.role === "teacher" ? "active" : "pending",
+    joinIdentityType: payload.role === "student" ? payload.identityType ?? null : null,
+    joinIdentityHash: normalizedIdentity ? createHash("sha256").update(normalizedIdentity).digest("hex") : null,
     handRaised: false,
     handRaisedAt: null,
     joinedAt: now,
     lastSeenAt: now
   };
 
-  upsertParticipant(meetingCode, participant);
+  await meetingRepo.ensureMeeting(meetingCode);
+  await meetingRepo.upsertParticipant(meetingCode, participant);
+  publishEvent(meetingCode, { type: "participant-joined", participant });
+
   return { ok: true, meetingCode, participant, status: participant.status };
 }
 
-export function listRoomParticipants(meetingCode: string, participantId?: string): Participant[] {
+export async function listRoomParticipants(meetingCode: string, participantId?: string): Promise<Participant[]> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return [];
   }
 
   if (participantId) {
-    touchParticipant(normalizedMeetingCode, participantId);
+    await meetingRepo.touchParticipant(normalizedMeetingCode, participantId, Date.now());
   }
 
-  return getParticipants(normalizedMeetingCode);
+  return meetingRepo.getParticipants(normalizedMeetingCode);
 }
 
-export function listVisibleMeetingChatMessages(meetingCode: string, participantId: string): MeetingChatMessage[] {
+export async function listVisibleMeetingChatMessages(meetingCode: string, participantId: string): Promise<MeetingChatMessage[]> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return [];
   }
 
-  const participant = getParticipant(normalizedMeetingCode, participantId);
+  const participant = await meetingRepo.getParticipant(normalizedMeetingCode, participantId);
   if (!participant) {
     return [];
   }
@@ -98,49 +122,47 @@ export function listVisibleMeetingChatMessages(meetingCode: string, participantI
   return messages.filter((message) => message.role === "teacher" || message.participantId === participantId);
 }
 
-export function getRoomHostControls(meetingCode: string): HostControls {
+export async function getRoomHostControls(meetingCode: string): Promise<HostControls> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
-    return {
-      muteAllRequestId: 0,
-      forceStudentCamerasOn: false,
-      vivaTimeEnabled: false,
-      meetingChatEnabled: false
-    };
+    return { ...DEFAULT_HOST_CONTROLS };
   }
 
-  return getHostControls(normalizedMeetingCode);
+  return meetingRepo.getHostControls(normalizedMeetingCode);
 }
 
-export function canParticipantUseAiChat(meetingCode: string, participantId: string): boolean {
+export async function canParticipantUseAiChat(meetingCode: string, participantId: string): Promise<boolean> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return false;
   }
 
-  const participant = getParticipant(normalizedMeetingCode, participantId);
+  const participant = await meetingRepo.getParticipant(normalizedMeetingCode, participantId);
   if (!participant || participant.status !== "active") {
     return false;
   }
 
-  return participant.role === "teacher" || !getHostControls(normalizedMeetingCode).vivaTimeEnabled;
+  const hostControls = await meetingRepo.getHostControls(normalizedMeetingCode);
+  return participant.role === "teacher" || !hostControls.vivaTimeEnabled;
 }
 
-export function sendMeetingChatMessage(
+export async function sendMeetingChatMessage(
   meetingCode: string,
   participantId: string,
   content: string
-): { ok: true; message: MeetingChatMessage } | { ok: false; message: string } {
+): Promise<{ ok: true; message: MeetingChatMessage } | { ok: false; message: string }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code." };
   }
 
-  const participant = getParticipant(normalizedMeetingCode, participantId);
+  const participant = await meetingRepo.getParticipant(normalizedMeetingCode, participantId);
   if (!participant || participant.status !== "active") {
     return { ok: false, message: "Only active participants can send messages." };
   }
-  if (participant.role === "student" && !getHostControls(normalizedMeetingCode).meetingChatEnabled) {
+
+  const hostControls = await meetingRepo.getHostControls(normalizedMeetingCode);
+  if (participant.role === "student" && !hostControls.meetingChatEnabled) {
     return { ok: false, message: "Meeting Chat disabled." };
   }
 
@@ -161,16 +183,20 @@ export function sendMeetingChatMessage(
   return { ok: true, message };
 }
 
-export function leaveMeeting(meetingCode: string, participantId: string): void {
+export async function leaveMeeting(meetingCode: string, participantId: string): Promise<void> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return;
   }
-  removeParticipant(normalizedMeetingCode, participantId);
+
+  const removed = await meetingRepo.removeParticipant(normalizedMeetingCode, participantId);
+  if (removed) {
+    publishEvent(normalizedMeetingCode, { type: "participant-left", participantId });
+  }
 }
 
-function assertActiveTeacher(meetingCode: string, actorParticipantId: string): boolean {
-  const actor = getParticipant(meetingCode, actorParticipantId);
+async function assertActiveTeacher(meetingCode: string, actorParticipantId: string): Promise<boolean> {
+  const actor = await meetingRepo.getParticipant(meetingCode, actorParticipantId);
   return Boolean(actor && actor.role === "teacher" && actor.status === "active");
 }
 
@@ -273,16 +299,16 @@ function sanitizeDrawable(drawable: WhiteboardDrawable): WhiteboardDrawable | nu
   return null;
 }
 
-export function getMeetingWhiteboard(
+export async function getMeetingWhiteboard(
   meetingCode: string,
   participantId: string
-): { ok: true; whiteboard: WhiteboardState } | { ok: false; message: string } {
+): Promise<{ ok: true; whiteboard: WhiteboardState } | { ok: false; message: string }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code." };
   }
 
-  const participant = getParticipant(normalizedMeetingCode, participantId);
+  const participant = await meetingRepo.getParticipant(normalizedMeetingCode, participantId);
   if (!participant || participant.status !== "active" || participant.role !== "teacher") {
     return { ok: false, message: "Only active teacher can view whiteboard." };
   }
@@ -290,17 +316,17 @@ export function getMeetingWhiteboard(
   return { ok: true, whiteboard: getWhiteboard(normalizedMeetingCode) };
 }
 
-export function applyMeetingWhiteboardAction(
+export async function applyMeetingWhiteboardAction(
   meetingCode: string,
   participantId: string,
   action: WhiteboardAction
-): { ok: true; whiteboard: WhiteboardState } | { ok: false; message: string; status?: number } {
+): Promise<{ ok: true; whiteboard: WhiteboardState } | { ok: false; message: string; status?: number }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code.", status: 400 };
   }
 
-  if (!assertActiveTeacher(normalizedMeetingCode, participantId)) {
+  if (!(await assertActiveTeacher(normalizedMeetingCode, participantId))) {
     return { ok: false, message: "Only active teacher can update whiteboard.", status: 403 };
   }
 
@@ -364,20 +390,20 @@ export function applyMeetingWhiteboardAction(
   return { ok: false, message: "Invalid whiteboard action.", status: 400 };
 }
 
-export function approveParticipant(
+export async function approveParticipant(
   meetingCode: string,
   actorParticipantId: string,
   targetParticipantId: string
-): { ok: true } | { ok: false; message: string } {
+): Promise<{ ok: true } | { ok: false; message: string }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code." };
   }
-  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+  if (!(await assertActiveTeacher(normalizedMeetingCode, actorParticipantId))) {
     return { ok: false, message: "Only active teacher can approve requests." };
   }
 
-  const target = getParticipant(normalizedMeetingCode, targetParticipantId);
+  const target = await meetingRepo.getParticipant(normalizedMeetingCode, targetParticipantId);
   if (!target) {
     return { ok: false, message: "Participant not found." };
   }
@@ -385,24 +411,28 @@ export function approveParticipant(
     return { ok: false, message: "Rejected participants cannot be approved." };
   }
 
-  updateParticipantStatus(normalizedMeetingCode, targetParticipantId, "active");
+  const updated = await meetingRepo.updateParticipantStatus(normalizedMeetingCode, targetParticipantId, "active");
+  if (updated) {
+    publishEvent(normalizedMeetingCode, { type: "participant-status-updated", participantId: targetParticipantId, status: "active" });
+  }
+
   return { ok: true };
 }
 
-export function rejectParticipant(
+export async function rejectParticipant(
   meetingCode: string,
   actorParticipantId: string,
   targetParticipantId: string
-): { ok: true } | { ok: false; message: string } {
+): Promise<{ ok: true } | { ok: false; message: string }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code." };
   }
-  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+  if (!(await assertActiveTeacher(normalizedMeetingCode, actorParticipantId))) {
     return { ok: false, message: "Only active teacher can reject requests." };
   }
 
-  const target = getParticipant(normalizedMeetingCode, targetParticipantId);
+  const target = await meetingRepo.getParticipant(normalizedMeetingCode, targetParticipantId);
   if (!target) {
     return { ok: false, message: "Participant not found." };
   }
@@ -410,24 +440,28 @@ export function rejectParticipant(
     return { ok: false, message: "Teacher cannot be rejected from this control." };
   }
 
-  updateParticipantStatus(normalizedMeetingCode, targetParticipantId, "rejected");
+  const updated = await meetingRepo.updateParticipantStatus(normalizedMeetingCode, targetParticipantId, "rejected");
+  if (updated) {
+    publishEvent(normalizedMeetingCode, { type: "participant-status-updated", participantId: targetParticipantId, status: "rejected" });
+  }
+
   return { ok: true };
 }
 
-export function removeParticipantFromRoom(
+export async function removeParticipantFromRoom(
   meetingCode: string,
   actorParticipantId: string,
   targetParticipantId: string
-): { ok: true } | { ok: false; message: string } {
+): Promise<{ ok: true } | { ok: false; message: string }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code." };
   }
-  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+  if (!(await assertActiveTeacher(normalizedMeetingCode, actorParticipantId))) {
     return { ok: false, message: "Only active teacher can remove participants." };
   }
 
-  const target = getParticipant(normalizedMeetingCode, targetParticipantId);
+  const target = await meetingRepo.getParticipant(normalizedMeetingCode, targetParticipantId);
   if (!target) {
     return { ok: false, message: "Participant not found." };
   }
@@ -435,26 +469,69 @@ export function removeParticipantFromRoom(
     return { ok: false, message: "Teacher cannot be removed from this control." };
   }
 
-  removeParticipant(normalizedMeetingCode, targetParticipantId);
+  const removed = await meetingRepo.removeParticipant(normalizedMeetingCode, targetParticipantId);
+  if (removed) {
+    publishEvent(normalizedMeetingCode, { type: "participant-left", participantId: targetParticipantId });
+  }
+
   return { ok: true };
 }
 
-export function updateRoomHostControls(
+export async function banParticipantFromRoom(
+  meetingCode: string,
+  actorParticipantId: string,
+  targetParticipantId: string
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code." };
+  }
+  if (!(await assertActiveTeacher(normalizedMeetingCode, actorParticipantId))) {
+    return { ok: false, message: "Only active teacher can ban participants." };
+  }
+
+  const target = await meetingRepo.getParticipant(normalizedMeetingCode, targetParticipantId);
+  if (!target) {
+    return { ok: false, message: "Participant not found." };
+  }
+  if (target.role === "teacher") {
+    return { ok: false, message: "Teacher cannot be banned from this control." };
+  }
+  if (!target.joinIdentityType || !target.joinIdentityHash) {
+    return { ok: false, message: "Participant identity is unavailable for ban." };
+  }
+
+  await meetingRepo.banIdentity(
+    normalizedMeetingCode,
+    target.joinIdentityType,
+    target.joinIdentityHash,
+    actorParticipantId
+  );
+
+  const removed = await meetingRepo.removeParticipant(normalizedMeetingCode, targetParticipantId);
+  if (removed) {
+    publishEvent(normalizedMeetingCode, { type: "participant-left", participantId: targetParticipantId });
+  }
+
+  return { ok: true };
+}
+
+export async function updateRoomHostControls(
   meetingCode: string,
   actorParticipantId: string,
   updates: Partial<Pick<HostControls, "forceStudentCamerasOn" | "vivaTimeEnabled" | "meetingChatEnabled">> & {
     muteAll?: boolean;
   }
-): { ok: true; hostControls: HostControls } | { ok: false; message: string } {
+): Promise<{ ok: true; hostControls: HostControls } | { ok: false; message: string }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code." };
   }
-  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+  if (!(await assertActiveTeacher(normalizedMeetingCode, actorParticipantId))) {
     return { ok: false, message: "Only active teacher can update host controls." };
   }
 
-  const current = getHostControls(normalizedMeetingCode);
+  const current = await meetingRepo.getHostControls(normalizedMeetingCode);
   const nextUpdates: Partial<HostControls> = {};
 
   if (updates.muteAll) {
@@ -470,20 +547,21 @@ export function updateRoomHostControls(
     nextUpdates.meetingChatEnabled = updates.meetingChatEnabled;
   }
 
-  return { ok: true, hostControls: updateHostControls(normalizedMeetingCode, nextUpdates) };
+  const hostControls = await meetingRepo.updateHostControls(normalizedMeetingCode, nextUpdates);
+  return { ok: true, hostControls };
 }
 
-export function setParticipantHandRaised(
+export async function setParticipantHandRaised(
   meetingCode: string,
   actorParticipantId: string,
   handRaised: boolean
-): { ok: true } | { ok: false; message: string } {
+): Promise<{ ok: true } | { ok: false; message: string }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code." };
   }
 
-  const participant = getParticipant(normalizedMeetingCode, actorParticipantId);
+  const participant = await meetingRepo.getParticipant(normalizedMeetingCode, actorParticipantId);
   if (!participant) {
     return { ok: false, message: "Participant not found." };
   }
@@ -491,30 +569,44 @@ export function setParticipantHandRaised(
     return { ok: false, message: "Only active participants can use raise hand." };
   }
 
-  const updated = updateParticipantHandRaised(normalizedMeetingCode, actorParticipantId, handRaised);
+  const handRaisedAt = handRaised ? Date.now() : null;
+  const updated = await meetingRepo.updateParticipantHandRaised(
+    normalizedMeetingCode,
+    actorParticipantId,
+    handRaised,
+    handRaisedAt,
+    Date.now()
+  );
   if (!updated) {
     return { ok: false, message: "Could not update raise hand state." };
   }
 
+  publishEvent(normalizedMeetingCode, {
+    type: "participant-hand-updated",
+    participantId: actorParticipantId,
+    handRaised,
+    handRaisedAt
+  });
+
   return { ok: true };
 }
 
-export function controlParticipantMedia(
+export async function controlParticipantMedia(
   meetingCode: string,
   actorParticipantId: string,
   targetParticipantId: string,
   media: "camera" | "mic",
   enabled: boolean
-): { ok: true } | { ok: false; message: string } {
+): Promise<{ ok: true } | { ok: false; message: string }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code." };
   }
-  if (!assertActiveTeacher(normalizedMeetingCode, actorParticipantId)) {
+  if (!(await assertActiveTeacher(normalizedMeetingCode, actorParticipantId))) {
     return { ok: false, message: "Only active teacher can control participant media." };
   }
 
-  const target = getParticipant(normalizedMeetingCode, targetParticipantId);
+  const target = await meetingRepo.getParticipant(normalizedMeetingCode, targetParticipantId);
   if (!target || target.status !== "active") {
     return { ok: false, message: "Active participant not found." };
   }
@@ -551,3 +643,5 @@ export function sendSignal(
     signal
   });
 }
+
+export { subscribeToRoom };
