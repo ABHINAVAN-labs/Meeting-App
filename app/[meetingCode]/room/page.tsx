@@ -71,6 +71,53 @@ type HostControls = {
   vivaTimeEnabled: boolean;
   meetingChatEnabled: boolean;
 };
+type WhiteboardTool = "pen" | "highlighter" | "eraser" | "shape-rect" | "shape-circle" | "shape-line" | "text";
+type WhiteboardPoint = {
+  x: number;
+  y: number;
+};
+type WhiteboardStrokeDrawable = {
+  id: string;
+  kind: "stroke";
+  tool: "pen" | "highlighter" | "eraser";
+  color: string;
+  width: number;
+  points: WhiteboardPoint[];
+  createdAt: number;
+};
+type WhiteboardShapeDrawable = {
+  id: string;
+  kind: "shape";
+  tool: "shape-rect" | "shape-circle" | "shape-line";
+  color: string;
+  width: number;
+  start: WhiteboardPoint;
+  end: WhiteboardPoint;
+  createdAt: number;
+};
+type WhiteboardTextDrawable = {
+  id: string;
+  kind: "text";
+  tool: "text";
+  color: string;
+  size: number;
+  point: WhiteboardPoint;
+  text: string;
+  createdAt: number;
+};
+type WhiteboardDrawable = WhiteboardStrokeDrawable | WhiteboardShapeDrawable | WhiteboardTextDrawable;
+type WhiteboardState = {
+  version: number;
+  drawables: WhiteboardDrawable[];
+  lastUpdatedAt: string;
+  history: WhiteboardDrawable[][];
+  future: WhiteboardDrawable[][];
+};
+type WhiteboardAction =
+  | { type: "draw"; drawable: WhiteboardDrawable }
+  | { type: "undo" }
+  | { type: "redo" }
+  | { type: "clear" };
 
 function cleanAiDisplayText(content: string) {
   return content
@@ -162,6 +209,11 @@ function parseAssistantLines(content: string): AssistantLine[] {
   });
 }
 
+function normalizeParticipantRole(value: unknown): "teacher" | "student" {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return normalized === "teacher" ? "teacher" : "student";
+}
+
 const SESSION_STORAGE_PREFIX = "meeting_participant_session_";
 const PREFS_STORAGE_PREFIX = "meeting_media_prefs_";
 const AI_CHAT_STORAGE_PREFIX = "meeting_ai_chat_";
@@ -181,6 +233,16 @@ const TOKEN_REFRESH_MIN_DELAY_MS = 15_000;
 const SHARE_ZOOM_MIN = 1;
 const SHARE_ZOOM_MAX = 2;
 const SHARE_ZOOM_STEP = 0.25;
+const WHITEBOARD_CANVAS_WIDTH = 960;
+const WHITEBOARD_CANVAS_HEIGHT = 540;
+const WHITEBOARD_MAX_SAMPLE_POINTS = 300;
+const WHITEBOARD_EMPTY: WhiteboardState = {
+  version: 0,
+  drawables: [],
+  lastUpdatedAt: new Date(0).toISOString(),
+  history: [],
+  future: []
+};
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
@@ -257,6 +319,76 @@ function buildAiContext(messages: AiChatMessage[]) {
     recentMessages,
     summary
   };
+}
+
+function drawDrawable(ctx: CanvasRenderingContext2D, drawable: WhiteboardDrawable) {
+  if (drawable.kind === "stroke") {
+    if (drawable.points.length < 2) {
+      return;
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = drawable.tool === "eraser" ? "destination-out" : "source-over";
+    ctx.strokeStyle =
+      drawable.tool === "eraser"
+        ? "rgba(0,0,0,1)"
+        : drawable.tool === "highlighter"
+          ? `${drawable.color}66`
+          : drawable.color;
+    ctx.lineWidth = drawable.width;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(drawable.points[0].x, drawable.points[0].y);
+    for (let index = 1; index < drawable.points.length; index += 1) {
+      ctx.lineTo(drawable.points[index].x, drawable.points[index].y);
+    }
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (drawable.kind === "shape") {
+    ctx.save();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = drawable.color;
+    ctx.lineWidth = drawable.width;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    const startX = drawable.start.x;
+    const startY = drawable.start.y;
+    const endX = drawable.end.x;
+    const endY = drawable.end.y;
+    if (drawable.tool === "shape-line") {
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+    } else if (drawable.tool === "shape-rect") {
+      const x = Math.min(startX, endX);
+      const y = Math.min(startY, endY);
+      const width = Math.abs(endX - startX);
+      const height = Math.abs(endY - startY);
+      ctx.strokeRect(x, y, width, height);
+    } else {
+      const centerX = (startX + endX) / 2;
+      const centerY = (startY + endY) / 2;
+      const radiusX = Math.abs(endX - startX) / 2;
+      const radiusY = Math.abs(endY - startY) / 2;
+      ctx.beginPath();
+      ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = drawable.color;
+  ctx.font = `${drawable.size}px Oxygen, sans-serif`;
+  ctx.textBaseline = "top";
+  ctx.fillText(drawable.text, drawable.point.x, drawable.point.y);
+  ctx.restore();
 }
 
 function RemoteVideo({
@@ -444,6 +576,13 @@ export default function MeetingRoomPage() {
   const [shareZoomLevel, setShareZoomLevel] = useState(SHARE_ZOOM_MIN);
   const [sharePanOffset, setSharePanOffset] = useState({ x: 0, y: 0 });
   const [isShareDragging, setIsShareDragging] = useState(false);
+  const [whiteboard, setWhiteboard] = useState<WhiteboardState>(WHITEBOARD_EMPTY);
+  const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
+  const [whiteboardError, setWhiteboardError] = useState("");
+  const [whiteboardSyncing, setWhiteboardSyncing] = useState(false);
+  const [whiteboardTool, setWhiteboardTool] = useState<WhiteboardTool>("pen");
+  const [whiteboardColor, setWhiteboardColor] = useState("#2563EB");
+  const [whiteboardWidth, setWhiteboardWidth] = useState(4);
 
   const participantIdRef = useRef("");
   const selfRoleRef = useRef<ParticipantRole | null>(null);
@@ -483,6 +622,15 @@ export default function MeetingRoomPage() {
   const shareViewportRef = useRef<HTMLDivElement | null>(null);
   const sharePointerIdRef = useRef<number | null>(null);
   const shareDragStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const whiteboardCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const whiteboardPointerIdRef = useRef<number | null>(null);
+  const whiteboardDraftDrawableRef = useRef<WhiteboardDrawable | null>(null);
+  const whiteboardDraftStartRef = useRef<WhiteboardPoint | null>(null);
+  const whiteboardRenderRafRef = useRef<number | null>(null);
+  const whiteboardRenderDirtyRef = useRef(true);
+  const [whiteboardTextDraft, setWhiteboardTextDraft] = useState<{ point: WhiteboardPoint } | null>(null);
+  const whiteboardTextDraftRef = useRef<{ point: WhiteboardPoint } | null>(null);
+  const whiteboardTextValueRef = useRef("");
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -866,14 +1014,17 @@ export default function MeetingRoomPage() {
     const audioPubs = pubs.filter((pub) => pub.kind === Track.Kind.Audio);
     const audioPub = audioPubs.find((pub) => pub.isSubscribed && pub.audioTrack) ?? audioPubs[0];
 
-    let role = "student";
+    let role: "teacher" | "student" = "student";
     if (participant.metadata) {
       try {
-        const parsed = JSON.parse(participant.metadata) as { role?: string };
-        role = parsed.role ?? role;
+        const parsed = JSON.parse(participant.metadata) as { role?: unknown };
+        role = normalizeParticipantRole(parsed.role);
       } catch {
         role = "student";
       }
+    }
+    if (!participant.metadata && participant.attributes?.role) {
+      role = normalizeParticipantRole(participant.attributes.role);
     }
 
     return {
@@ -1614,6 +1765,7 @@ export default function MeetingRoomPage() {
       pendingParticipants?: PendingParticipant[];
       hostControls?: HostControls;
       meetingChatMessages?: MeetingChatMessage[];
+      whiteboard?: WhiteboardState | null;
     };
 
     if (!payload.sessionParticipant) {
@@ -1648,6 +1800,9 @@ export default function MeetingRoomPage() {
     setActiveStudents(students);
     setHostControls(payload.hostControls ?? DEFAULT_HOST_CONTROLS);
     setMeetingChatMessages(payload.meetingChatMessages ?? []);
+    if (payload.whiteboard) {
+      setWhiteboard(payload.whiteboard);
+    }
 
     if (serverRole === "teacher") {
       setPendingParticipants(payload.pendingParticipants ?? []);
@@ -1714,6 +1869,7 @@ export default function MeetingRoomPage() {
         | { type: "participant-left"; participantId: string }
         | { type: "participant-status-updated"; participantId: string; status: ParticipantStatus }
         | { type: "participant-hand-updated"; participantId: string; handRaised: boolean; handRaisedAt: number | null }
+        | { type: "whiteboard-updated"; version: number }
         | { type: "participant-media-control"; participantId: string; media: "camera" | "mic"; enabled: boolean }
         | {
             type: "signal";
@@ -1748,6 +1904,11 @@ export default function MeetingRoomPage() {
         return;
       }
 
+      if (event.type === "whiteboard-updated") {
+        void syncRoomState("event");
+        return;
+      }
+
       if (event.type === "participant-media-control") {
         if (event.media === "camera") {
           if (event.enabled !== cameraEnabled) {
@@ -1769,6 +1930,13 @@ export default function MeetingRoomPage() {
       events.close();
     };
   }, [readableMeetingCode, syncRoomState]);
+
+  useEffect(() => {
+    if (!isWhiteboardOpen) {
+      return;
+    }
+    void fetchWhiteboardSnapshot();
+  }, [isWhiteboardOpen, readableMeetingCode]);
 
   useEffect(() => {
   }, [activeStudents]);
@@ -1944,7 +2112,321 @@ export default function MeetingRoomPage() {
     setHostControls(payload.hostControls);
   }
 
-  const teacherRemote = remoteParticipants.find((participant) => participant.role === "teacher");
+  async function fetchWhiteboardSnapshot() {
+    if (!readableMeetingCode) {
+      return;
+    }
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/whiteboard`, {
+      headers: actorParticipantId ? { "x-participant-id": actorParticipantId } : undefined
+    }).catch(() => null);
+    if (!response || !response.ok) {
+      return;
+    }
+    const payload = (await response.json().catch(() => ({}))) as { whiteboard?: WhiteboardState };
+    if (payload.whiteboard) {
+      setWhiteboard(payload.whiteboard);
+    }
+  }
+
+  async function sendWhiteboardAction(action: WhiteboardAction) {
+    if (selfRole !== "teacher") {
+      return false;
+    }
+    if (!readableMeetingCode) {
+      return false;
+    }
+    setWhiteboardSyncing(true);
+    setWhiteboardError("");
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/whiteboard`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(actorParticipantId ? { "x-participant-id": actorParticipantId } : {})
+      },
+      body: JSON.stringify(action)
+    }).catch(() => null);
+
+    setWhiteboardSyncing(false);
+    if (!response || !response.ok) {
+      const payload = (await response?.json().catch(() => ({}))) as { message?: string };
+      setWhiteboardError(payload.message ?? "Could not update whiteboard.");
+      return false;
+    }
+
+    const payload = (await response.json().catch(() => ({}))) as { whiteboard?: WhiteboardState };
+    if (payload.whiteboard) {
+      setWhiteboard(payload.whiteboard);
+    }
+    return true;
+  }
+
+  function toCanvasPoint(event: ReactPointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement): WhiteboardPoint {
+    const rect = canvas.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * WHITEBOARD_CANVAS_WIDTH;
+    const y = ((event.clientY - rect.top) / rect.height) * WHITEBOARD_CANVAS_HEIGHT;
+    return {
+      x: Math.max(0, Math.min(WHITEBOARD_CANVAS_WIDTH, x)),
+      y: Math.max(0, Math.min(WHITEBOARD_CANVAS_HEIGHT, y))
+    };
+  }
+
+  function makeDrawableId() {
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  function getTextSizeFromWidth(width: number) {
+    return Math.max(12, Math.min(54, Math.round(width * 6)));
+  }
+
+  function markWhiteboardDirty() {
+    whiteboardRenderDirtyRef.current = true;
+  }
+
+  function handleWhiteboardPointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (selfRole !== "teacher" || whiteboardSyncing) {
+      return;
+    }
+    const canvas = whiteboardCanvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const point = toCanvasPoint(event, canvas);
+    if (whiteboardTool === "text") {
+      const draft = { point };
+      setWhiteboardTextDraft(draft);
+      whiteboardTextDraftRef.current = draft;
+      whiteboardTextValueRef.current = "";
+      whiteboardDraftDrawableRef.current = null;
+      whiteboardDraftStartRef.current = null;
+      markWhiteboardDirty();
+      return;
+    }
+
+    whiteboardPointerIdRef.current = event.pointerId;
+    whiteboardDraftStartRef.current = point;
+    if (whiteboardTool === "shape-rect" || whiteboardTool === "shape-circle" || whiteboardTool === "shape-line") {
+      whiteboardDraftDrawableRef.current = {
+        id: makeDrawableId(),
+        kind: "shape",
+        tool: whiteboardTool,
+        color: whiteboardColor.toUpperCase(),
+        width: whiteboardWidth,
+        start: point,
+        end: point,
+        createdAt: Date.now()
+      };
+    } else {
+      whiteboardDraftDrawableRef.current = {
+        id: makeDrawableId(),
+        kind: "stroke",
+        tool: whiteboardTool,
+        color: whiteboardTool === "eraser" ? "#FFFFFF" : whiteboardColor.toUpperCase(),
+        width: whiteboardWidth,
+        points: [point],
+        createdAt: Date.now()
+      };
+    }
+    canvas.setPointerCapture(event.pointerId);
+    markWhiteboardDirty();
+    setWhiteboardError("");
+  }
+
+  function handleWhiteboardPointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (selfRole !== "teacher" || whiteboardPointerIdRef.current !== event.pointerId) {
+      return;
+    }
+    const canvas = whiteboardCanvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const point = toCanvasPoint(event, canvas);
+    const draft = whiteboardDraftDrawableRef.current;
+    if (!draft) {
+      return;
+    }
+
+    if (draft.kind === "stroke") {
+      draft.points.push(point);
+      if (draft.points.length > WHITEBOARD_MAX_SAMPLE_POINTS) {
+        draft.points = draft.points.filter((_, index) => index % 2 === 0);
+      }
+    } else if (draft.kind === "shape") {
+      draft.end = point;
+    }
+    markWhiteboardDirty();
+  }
+
+  async function commitWhiteboardStroke(pointerId: number | null) {
+    if (selfRole !== "teacher" || pointerId === null || whiteboardPointerIdRef.current !== pointerId) {
+      return;
+    }
+    const draft = whiteboardDraftDrawableRef.current;
+    whiteboardPointerIdRef.current = null;
+    whiteboardDraftStartRef.current = null;
+    whiteboardDraftDrawableRef.current = null;
+    markWhiteboardDirty();
+    if (!draft) {
+      return;
+    }
+
+    if (draft.kind === "stroke" && draft.points.length < 2) {
+      return;
+    }
+    if (
+      draft.kind === "shape" &&
+      Math.abs(draft.start.x - draft.end.x) < 1 &&
+      Math.abs(draft.start.y - draft.end.y) < 1
+    ) {
+      return;
+    }
+
+    await sendWhiteboardAction({ type: "draw", drawable: draft });
+  }
+
+  async function commitWhiteboardText(text: string) {
+    const draft = whiteboardTextDraftRef.current;
+    if (selfRole !== "teacher" || !draft) {
+      return;
+    }
+    const normalizedText = text.trim();
+    const point = draft.point;
+    setWhiteboardTextDraft(null);
+    whiteboardTextDraftRef.current = null;
+    whiteboardTextValueRef.current = "";
+    markWhiteboardDirty();
+    if (!normalizedText) {
+      return;
+    }
+    await sendWhiteboardAction({
+      type: "draw",
+      drawable: {
+        id: makeDrawableId(),
+        kind: "text",
+        tool: "text",
+        color: whiteboardColor.toUpperCase(),
+        size: getTextSizeFromWidth(whiteboardWidth),
+        point,
+        text: normalizedText,
+        createdAt: Date.now()
+      }
+    });
+  }
+
+  useEffect(() => {
+    markWhiteboardDirty();
+  }, [whiteboard.version, whiteboard.drawables, whiteboardTextDraft]);
+
+  useEffect(() => {
+    if (!whiteboardTextDraft || selfRole !== "teacher" || !isWhiteboardOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        void commitWhiteboardText(whiteboardTextValueRef.current);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setWhiteboardTextDraft(null);
+        whiteboardTextDraftRef.current = null;
+        whiteboardTextValueRef.current = "";
+        markWhiteboardDirty();
+        return;
+      }
+
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        whiteboardTextValueRef.current = whiteboardTextValueRef.current.slice(0, -1);
+        markWhiteboardDirty();
+        return;
+      }
+
+      if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        if (whiteboardTextValueRef.current.length < 200) {
+          whiteboardTextValueRef.current = `${whiteboardTextValueRef.current}${event.key}`;
+        }
+        markWhiteboardDirty();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [whiteboardTextDraft, selfRole, isWhiteboardOpen]);
+
+  useEffect(() => {
+    if (!isWhiteboardOpen) {
+      if (whiteboardRenderRafRef.current !== null) {
+        window.cancelAnimationFrame(whiteboardRenderRafRef.current);
+        whiteboardRenderRafRef.current = null;
+      }
+      return;
+    }
+
+    let mounted = true;
+    const render = () => {
+      if (!mounted) {
+        return;
+      }
+      const canvas = whiteboardCanvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (canvas && context) {
+        context.clearRect(0, 0, WHITEBOARD_CANVAS_WIDTH, WHITEBOARD_CANVAS_HEIGHT);
+        for (const drawable of whiteboard.drawables) {
+          drawDrawable(context, drawable);
+        }
+        const draft = whiteboardDraftDrawableRef.current;
+        if (draft) {
+          drawDrawable(context, draft);
+        }
+        if (whiteboardTextDraft) {
+          context.save();
+          context.fillStyle = whiteboardColor.toUpperCase();
+          context.font = `${getTextSizeFromWidth(whiteboardWidth)}px Oxygen, sans-serif`;
+          context.textBaseline = "top";
+          const draftText = whiteboardTextValueRef.current;
+          context.fillText(draftText, whiteboardTextDraft.point.x, whiteboardTextDraft.point.y);
+          const caretVisible = Math.floor(performance.now() / 500) % 2 === 0;
+          if (caretVisible) {
+            const textWidth = context.measureText(draftText).width;
+            const caretX = whiteboardTextDraft.point.x + textWidth + 1;
+            const caretY = whiteboardTextDraft.point.y;
+            const caretHeight = getTextSizeFromWidth(whiteboardWidth);
+            context.beginPath();
+            context.moveTo(caretX, caretY);
+            context.lineTo(caretX, caretY + caretHeight);
+            context.lineWidth = Math.max(1, whiteboardWidth / 3);
+            context.strokeStyle = whiteboardColor.toUpperCase();
+            context.stroke();
+          }
+          context.restore();
+        }
+      }
+      whiteboardRenderRafRef.current = window.requestAnimationFrame(render);
+    };
+
+    whiteboardRenderRafRef.current = window.requestAnimationFrame(render);
+    return () => {
+      mounted = false;
+      if (whiteboardRenderRafRef.current !== null) {
+        window.cancelAnimationFrame(whiteboardRenderRafRef.current);
+        whiteboardRenderRafRef.current = null;
+      }
+    };
+  }, [isWhiteboardOpen, whiteboard.drawables, whiteboardColor, whiteboardWidth, whiteboardTextDraft]);
+
+  const teacherRemote =
+    remoteParticipants.find((participant) => participant.role === "teacher") ??
+    (selfRole === "student" ? remoteParticipants[0] : undefined);
   const teacherScreenShare = remoteParticipants.find(
     (participant) =>
       participant.role === "teacher" &&
@@ -1968,7 +2450,13 @@ export default function MeetingRoomPage() {
     ...participant,
     hasVideo: Boolean(participant.publication?.videoTrack || participant.stream)
   }));
-  const teacherVisibleStudents = remoteStudentParticipants;
+  const teacherVisibleStudents =
+    selfRole === "teacher" && remoteStudentParticipants.length === 0
+      ? remoteParticipants.map((participant) => ({
+          ...participant,
+          hasVideo: Boolean(participant.publication?.videoTrack || participant.stream)
+        }))
+      : remoteStudentParticipants;
 
   const currentCameraOnIds = teacherVisibleStudents
     .filter((participant) => participant.hasVideo)
@@ -2584,6 +3072,23 @@ export default function MeetingRoomPage() {
               </svg>
             </button>
           ) : null}
+          {selfRole === "teacher" ? (
+            <button
+              aria-label={isWhiteboardOpen ? "Close whiteboard" : "Open whiteboard"}
+              className={`room-icon-button whiteboard-icon-button ${isWhiteboardOpen ? "active" : ""}`}
+              title={isWhiteboardOpen ? "Close whiteboard" : "Open whiteboard"}
+              type="button"
+              onClick={() => {
+                setIsWhiteboardOpen((prev) => !prev);
+                setWhiteboardError("");
+              }}
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="3.5" y="4.5" width="17" height="15" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="2" />
+                <path d="M7 9h10M7 12h10M7 15h6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+              </svg>
+            </button>
+          ) : null}
           {selfRole === "student" ? (
             <button
               aria-label={isHandRaised ? "Lower hand" : "Raise hand"}
@@ -2805,6 +3310,125 @@ export default function MeetingRoomPage() {
                 style={{ transform: shareTransform }}
               />
             </div>
+          </div>
+        </div>
+      ) : null}
+      {selfRole === "teacher" && isWhiteboardOpen ? (
+        <div className="whiteboard-overlay" role="dialog" aria-modal="true" aria-label="Class whiteboard">
+          <div className="whiteboard-panel">
+            <div className="whiteboard-toolbar">
+              <strong>Class Whiteboard</strong>
+              <div className="whiteboard-toolbar-actions">
+                <button
+                  type="button"
+                  className={whiteboardTool === "pen" ? "active" : ""}
+                  onClick={() => setWhiteboardTool("pen")}
+                >
+                  Pen
+                </button>
+                <button
+                  type="button"
+                  className={whiteboardTool === "highlighter" ? "active" : ""}
+                  onClick={() => setWhiteboardTool("highlighter")}
+                >
+                  Highlighter
+                </button>
+                <button
+                  type="button"
+                  className={whiteboardTool === "eraser" ? "active" : ""}
+                  onClick={() => setWhiteboardTool("eraser")}
+                >
+                  Eraser
+                </button>
+                <button
+                  type="button"
+                  className={whiteboardTool === "shape-rect" ? "active" : ""}
+                  onClick={() => setWhiteboardTool("shape-rect")}
+                >
+                  Rect
+                </button>
+                <button
+                  type="button"
+                  className={whiteboardTool === "shape-circle" ? "active" : ""}
+                  onClick={() => setWhiteboardTool("shape-circle")}
+                >
+                  Circle
+                </button>
+                <button
+                  type="button"
+                  className={whiteboardTool === "shape-line" ? "active" : ""}
+                  onClick={() => setWhiteboardTool("shape-line")}
+                >
+                  Line
+                </button>
+                <button type="button" className={whiteboardTool === "text" ? "active" : ""} onClick={() => setWhiteboardTool("text")}>
+                  Text
+                </button>
+                <input
+                  type="color"
+                  aria-label="Whiteboard color"
+                  value={whiteboardColor}
+                  disabled={whiteboardTool === "eraser" || whiteboardSyncing}
+                  onChange={(event) => setWhiteboardColor(event.target.value)}
+                />
+                <input
+                  type="range"
+                  min={1}
+                  max={30}
+                  value={whiteboardWidth}
+                  aria-label="Whiteboard stroke width"
+                  disabled={whiteboardSyncing}
+                  onChange={(event) => setWhiteboardWidth(Number(event.target.value))}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void sendWhiteboardAction({ type: "undo" });
+                  }}
+                  disabled={whiteboardSyncing}
+                >
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void sendWhiteboardAction({ type: "redo" });
+                  }}
+                  disabled={whiteboardSyncing}
+                >
+                  Redo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void sendWhiteboardAction({ type: "clear" });
+                  }}
+                  disabled={whiteboardSyncing}
+                >
+                  Clear All
+                </button>
+                <button type="button" onClick={() => setIsWhiteboardOpen(false)}>
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="whiteboard-canvas-wrap">
+              <canvas
+                ref={whiteboardCanvasRef}
+                width={WHITEBOARD_CANVAS_WIDTH}
+                height={WHITEBOARD_CANVAS_HEIGHT}
+                className="whiteboard-canvas editable"
+                onPointerDown={handleWhiteboardPointerDown}
+                onPointerMove={handleWhiteboardPointerMove}
+                onPointerUp={(event) => {
+                  void commitWhiteboardStroke(event.pointerId);
+                }}
+                onPointerCancel={(event) => {
+                  void commitWhiteboardStroke(event.pointerId);
+                }}
+              />
+            </div>
+            {whiteboardError ? <p className="whiteboard-error">{whiteboardError}</p> : null}
           </div>
         </div>
       ) : null}

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME } from "../../../../../lib/meetings/constants";
-import { getRoomHostControls, listRoomParticipants, listVisibleMeetingChatMessages } from "../../../../../lib/meetings/service";
+import { getMeetingWhiteboard, getRoomHostControls, listRoomParticipants, listVisibleMeetingChatMessages } from "../../../../../lib/meetings/service";
 import { parseSessionCookie } from "../../../../../lib/meetings/session";
 import { normalizeMeetingCode } from "../../../../../lib/meetings/validation";
 
@@ -29,6 +29,8 @@ export async function GET(
   const participants = listRoomParticipants(normalizedCode, participantId);
   const sessionParticipant = participants.find((participant) => participant.id === participantId) ?? null;
   const pendingParticipants = participants.filter((participant) => participant.status === "pending");
+  const whiteboardResult =
+    sessionParticipant?.role === "teacher" ? getMeetingWhiteboard(normalizedCode, participantId) : null;
 
   return NextResponse.json({
     participants,
@@ -36,6 +38,7 @@ export async function GET(
     sessionParticipant,
     hostControls: getRoomHostControls(normalizedCode),
     meetingChatMessages: listVisibleMeetingChatMessages(normalizedCode, participantId),
+    whiteboard: whiteboardResult?.ok ? whiteboardResult.whiteboard : null,
     sessionParticipantId: participantId
   });
 }
