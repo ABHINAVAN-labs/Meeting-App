@@ -25,6 +25,7 @@ const WHITEBOARD_MAX_WIDTH = 30;
 const WHITEBOARD_MIN_COORD = 0;
 const WHITEBOARD_MAX_COORD = 10000;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+const ACTIVE_TEACHER_UNIQUE_INDEX = "uniq_active_teacher_per_meeting";
 
 export type JoinResult =
   | { ok: true; meetingCode: string; participant: Participant; status: Participant["status"] }
@@ -36,6 +37,17 @@ const DEFAULT_HOST_CONTROLS: HostControls = {
   vivaTimeEnabled: false,
   meetingChatEnabled: false
 };
+
+function isActiveTeacherUniquenessViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const maybeError = error as { code?: string; message?: string };
+  if (maybeError.code === "23505" && typeof maybeError.message === "string") {
+    return maybeError.message.includes(ACTIVE_TEACHER_UNIQUE_INDEX);
+  }
+  return false;
+}
 
 export async function joinMeeting(payload: JoinMeetingRequest): Promise<JoinResult> {
   const meetingCode = normalizeMeetingCode(payload.meetingCode);
@@ -84,7 +96,14 @@ export async function joinMeeting(payload: JoinMeetingRequest): Promise<JoinResu
   };
 
   await meetingRepo.ensureMeeting(meetingCode);
-  await meetingRepo.upsertParticipant(meetingCode, participant);
+  try {
+    await meetingRepo.upsertParticipant(meetingCode, participant);
+  } catch (error) {
+    if (payload.role === "teacher" && isActiveTeacherUniquenessViolation(error)) {
+      return { ok: false, message: "A teacher is already active in this meeting." };
+    }
+    throw error;
+  }
   publishEvent(meetingCode, { type: "participant-joined", participant });
 
   return { ok: true, meetingCode, participant, status: participant.status };
