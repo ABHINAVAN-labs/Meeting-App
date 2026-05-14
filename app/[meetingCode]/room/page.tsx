@@ -119,6 +119,14 @@ type WhiteboardAction =
   | { type: "redo" }
   | { type: "clear" };
 
+type TeacherQualityMode = "smart-auto" | "board-clarity" | "discussion-flow" | "weak-network";
+
+type QualityToast = {
+  id: number;
+  message: string;
+  undoMode?: TeacherQualityMode;
+};
+
 function cleanAiDisplayText(content: string) {
   return content
     .replace(/\r/g, "")
@@ -236,6 +244,20 @@ const SHARE_ZOOM_STEP = 0.25;
 const WHITEBOARD_CANVAS_WIDTH = 960;
 const WHITEBOARD_CANVAS_HEIGHT = 540;
 const WHITEBOARD_MAX_SAMPLE_POINTS = 300;
+const QUALITY_SWITCH_COOLDOWN_MS = 35_000;
+const QUALITY_SIGNAL_HOLD_MS = 12_000;
+const CLASS_HEALTH_TICK_MS = 4_000;
+const QUALITY_MODE_LABELS: Record<TeacherQualityMode, string> = {
+  "smart-auto": "Smart Auto",
+  "board-clarity": "Board Clarity",
+  "discussion-flow": "Discussion Flow",
+  "weak-network": "Weak Network"
+};
+const TEACHER_MODE_TO_PROFILE: Record<Exclude<TeacherQualityMode, "smart-auto">, QualityProfileName> = {
+  "board-clarity": "lecture",
+  "discussion-flow": "seminar",
+  "weak-network": "large-class"
+};
 const WHITEBOARD_EMPTY: WhiteboardState = {
   version: 0,
   drawables: [],
@@ -243,6 +265,36 @@ const WHITEBOARD_EMPTY: WhiteboardState = {
   history: [],
   future: []
 };
+
+function getProfileForTeacherMode(mode: TeacherQualityMode): QualityProfileName {
+  if (mode === "smart-auto") {
+    return "lecture";
+  }
+  return TEACHER_MODE_TO_PROFILE[mode];
+}
+
+function profileToTeacherMode(profile: QualityProfileName): Exclude<TeacherQualityMode, "smart-auto"> {
+  if (profile === "seminar") {
+    return "discussion-flow";
+  }
+  if (profile === "large-class") {
+    return "weak-network";
+  }
+  return "board-clarity";
+}
+
+function getQualityHealthLabel(score: number) {
+  if (score >= 80) {
+    return "Excellent";
+  }
+  if (score >= 60) {
+    return "Good";
+  }
+  if (score >= 40) {
+    return "Fair";
+  }
+  return "Weak";
+}
 
 function sessionKey(meetingCode: string) {
   return `${SESSION_STORAGE_PREFIX}${meetingCode}`;
@@ -569,6 +621,13 @@ export default function MeetingRoomPage() {
   const [meetingChatError, setMeetingChatError] = useState("");
   const [hostControls, setHostControls] = useState<HostControls>(DEFAULT_HOST_CONTROLS);
   const [qualityProfile, setQualityProfile] = useState<QualityProfileName>("lecture");
+  const [teacherQualityMode, setTeacherQualityMode] = useState<TeacherQualityMode>("smart-auto");
+  const [autoEnabled, setAutoEnabled] = useState(true);
+  const [lastAutoSwitchAt, setLastAutoSwitchAt] = useState(0);
+  const [qualityCooldownUntil, setQualityCooldownUntil] = useState(0);
+  const [classHealthScore, setClassHealthScore] = useState(100);
+  const [qualityToast, setQualityToast] = useState<QualityToast | null>(null);
+  const [rescueEnabled, setRescueEnabled] = useState(false);
   const [selfConnectionQuality, setSelfConnectionQuality] = useState<ConnectionQuality>(ConnectionQuality.Excellent);
   const [studentGalleryPage, setStudentGalleryPage] = useState(1);
   const [screenShareEnabled, setScreenShareEnabled] = useState(false);
@@ -590,6 +649,7 @@ export default function MeetingRoomPage() {
   const copyToastTimeoutRef = useRef<number | null>(null);
   const aiCopyTimeoutRef = useRef<number | null>(null);
   const aiCooldownTimerRef = useRef<number | null>(null);
+  const qualityToastTimerRef = useRef<number | null>(null);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
   const aiSpeechRecognitionRef = useRef<{
     start: () => void;
@@ -631,6 +691,11 @@ export default function MeetingRoomPage() {
   const [whiteboardTextDraft, setWhiteboardTextDraft] = useState<{ point: WhiteboardPoint } | null>(null);
   const whiteboardTextDraftRef = useRef<{ point: WhiteboardPoint } | null>(null);
   const whiteboardTextValueRef = useRef("");
+  const autoSignalRef = useRef<{ target: Exclude<TeacherQualityMode, "smart-auto"> | null; since: number }>({
+    target: null,
+    since: 0
+  });
+  const resumeCameraAfterRescueRef = useRef(false);
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -1743,6 +1808,61 @@ export default function MeetingRoomPage() {
     }
   }
 
+  function showQualityToast(message: string, undoMode?: TeacherQualityMode) {
+    const nextToast: QualityToast = { id: Date.now(), message, undoMode };
+    setQualityToast(nextToast);
+    if (qualityToastTimerRef.current) {
+      window.clearTimeout(qualityToastTimerRef.current);
+    }
+    qualityToastTimerRef.current = window.setTimeout(() => {
+      setQualityToast((current) => (current?.id === nextToast.id ? null : current));
+    }, 4200);
+  }
+
+  function applyTeacherMode(mode: Exclude<TeacherQualityMode, "smart-auto">, source: "manual" | "auto") {
+    const nextProfile = getProfileForTeacherMode(mode);
+    setTeacherQualityMode(mode);
+    setQualityProfile(nextProfile);
+    if (source === "auto") {
+      setLastAutoSwitchAt(Date.now());
+      setQualityCooldownUntil(Date.now() + QUALITY_SWITCH_COOLDOWN_MS);
+    }
+  }
+
+  async function toggleStudentRescueMode() {
+    const next = !rescueEnabled;
+    const room = roomRef.current;
+    setRescueEnabled(next);
+
+    if (next) {
+      resumeCameraAfterRescueRef.current = cameraEnabled;
+      if (cameraEnabled) {
+        await applyTeacherCameraControl(false);
+      }
+      if (!micEnabled) {
+        await toggleMic();
+      }
+      return;
+    }
+
+    if (resumeCameraAfterRescueRef.current && room && canPublishLocalTracks(room)) {
+      await turnCameraOnFromHostControl();
+    }
+    resumeCameraAfterRescueRef.current = false;
+  }
+
+  function handleTeacherPrimaryModeChange(mode: TeacherQualityMode) {
+    if (mode === "smart-auto") {
+      setAutoEnabled(true);
+      setTeacherQualityMode("smart-auto");
+      showQualityToast("Smart Auto enabled.");
+      return;
+    }
+
+    setAutoEnabled(false);
+    applyTeacherMode(mode, "manual");
+  }
+
   const syncRoomState = useCallback(async (source: "poll" | "event") => {
     if (!readableMeetingCode) {
       return;
@@ -1851,6 +1971,10 @@ export default function MeetingRoomPage() {
         window.clearInterval(aiCooldownTimerRef.current);
         aiCooldownTimerRef.current = null;
       }
+      if (qualityToastTimerRef.current) {
+        window.clearTimeout(qualityToastTimerRef.current);
+        qualityToastTimerRef.current = null;
+      }
       aiSpeechRecognitionRef.current?.abort();
       aiAbortControllerRef.current?.abort();
     };
@@ -1940,6 +2064,70 @@ export default function MeetingRoomPage() {
 
   useEffect(() => {
   }, [activeStudents]);
+
+  useEffect(() => {
+    if (selfRole !== "teacher" || !autoEnabled) {
+      autoSignalRef.current = { target: null, since: 0 };
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      const participantsCount = Math.max(1, activeStudents.length + 1);
+      const qualityValues = [selfConnectionQuality, ...remoteParticipants.map((participant) => participant.connectionQuality)];
+      const poorCount = qualityValues.filter((quality) => quality === ConnectionQuality.Poor || quality === ConnectionQuality.Lost).length;
+      const goodCount = qualityValues.filter((quality) => quality === ConnectionQuality.Excellent || quality === ConnectionQuality.Good).length;
+      const poorRatio = qualityValues.length > 0 ? poorCount / qualityValues.length : 0;
+      const goodRatio = qualityValues.length > 0 ? goodCount / qualityValues.length : 1;
+      const participantPenalty = Math.max(0, participantsCount - 8) * 1.8;
+      const health = Math.max(0, Math.min(100, Math.round(goodRatio * 78 - poorRatio * 42 + 24 - participantPenalty)));
+      setClassHealthScore(health);
+
+      let desiredMode: Exclude<TeacherQualityMode, "smart-auto"> = "board-clarity";
+      if (poorRatio >= 0.45 || health < 38 || participantsCount >= 30) {
+        desiredMode = "weak-network";
+      } else if (poorRatio >= 0.2 || health < 65 || participantsCount >= 14) {
+        desiredMode = "discussion-flow";
+      }
+
+      const now = Date.now();
+      if (now < qualityCooldownUntil) {
+        return;
+      }
+
+      if (desiredMode === teacherQualityMode) {
+        autoSignalRef.current = { target: null, since: 0 };
+        return;
+      }
+
+      const signal = autoSignalRef.current;
+      if (signal.target !== desiredMode) {
+        autoSignalRef.current = { target: desiredMode, since: now };
+        return;
+      }
+
+      if (now - signal.since < QUALITY_SIGNAL_HOLD_MS) {
+        return;
+      }
+
+      const previousMode = teacherQualityMode === "smart-auto" ? profileToTeacherMode(qualityProfile) : teacherQualityMode;
+      applyTeacherMode(desiredMode, "auto");
+      showQualityToast(`Auto switched from ${QUALITY_MODE_LABELS[previousMode]} to ${QUALITY_MODE_LABELS[desiredMode]}.`, previousMode);
+      autoSignalRef.current = { target: null, since: 0 };
+    }, CLASS_HEALTH_TICK_MS);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [
+    activeStudents.length,
+    autoEnabled,
+    qualityCooldownUntil,
+    qualityProfile,
+    remoteParticipants,
+    selfConnectionQuality,
+    selfRole,
+    teacherQualityMode
+  ]);
 
   useEffect(() => {
     if (selfRole === "teacher" && previousPendingParticipantsCountRef.current === 0 && pendingParticipants.length > 0) {
@@ -3128,6 +3316,17 @@ export default function MeetingRoomPage() {
               <img alt="" aria-hidden="true" src="/hand-back-right.svg" />
             </button>
           ) : null}
+          {selfRole === "student" ? (
+            <button
+              aria-label={rescueEnabled ? "Disable rescue mode" : "Enable rescue mode"}
+              className={`room-icon-button ${rescueEnabled ? "active" : ""}`}
+              title={rescueEnabled ? "Weak network mode active" : "Weak network mode"}
+              type="button"
+              onClick={() => void toggleStudentRescueMode()}
+            >
+              Weak
+            </button>
+          ) : null}
           <button
             aria-label="Leave meeting"
             className="room-icon-button leave-icon-button"
@@ -3204,25 +3403,39 @@ export default function MeetingRoomPage() {
                     onChange={(event) => void updateHostControls({ vivaTimeEnabled: event.target.checked })}
                   />
                 </label>
-                <label className="host-control-option">
+                <div className="host-control-option teaching-mode-block">
                   <svg aria-hidden="true" viewBox="0 0 24 24">
                     <path d="M4 4h16v16H4V4Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
                     <path d="M8 12l3 3 5-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
                   </svg>
-                  <span>Quality: {QUALITY_PROFILES[qualityProfile].label}</span>
-                  <select
-                    aria-label="Quality Profile"
-                    value={qualityProfile}
-                    onChange={(event) => setQualityProfile(event.target.value as QualityProfileName)}
-                    style={{ marginLeft: "auto", fontSize: "0.75rem", padding: "2px 4px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.2)", background: "transparent", color: "#f7fafc" }}
-                  >
-                    {(["lecture", "seminar", "large-class"] as QualityProfileName[]).map((name) => (
-                      <option key={name} value={name} style={{ background: "#1a1f2e", color: "#f7fafc" }}>
-                        {QUALITY_PROFILES[name].label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <div className="teaching-mode-content">
+                    <div className="teaching-mode-header">
+                      <span>Teaching Mode</span>
+                      <small className="teaching-mode-active-hint">{QUALITY_MODE_LABELS[teacherQualityMode]}</small>
+                    </div>
+                    <div className="teaching-mode-pills" role="group" aria-label="Teaching Mode">
+                      {(
+                        [
+                          { mode: "smart-auto", hint: "Adaptive" },
+                          { mode: "board-clarity", hint: "Sharp view" },
+                          { mode: "discussion-flow", hint: "Balanced" },
+                          { mode: "weak-network", hint: "Stable low data" }
+                        ] as const
+                      ).map(({ mode, hint }) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={`teaching-mode-pill${teacherQualityMode === mode ? " active" : ""}`}
+                          aria-pressed={teacherQualityMode === mode}
+                          onClick={() => handleTeacherPrimaryModeChange(mode)}
+                        >
+                          <strong>{QUALITY_MODE_LABELS[mode]}</strong>
+                          <small>{hint}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
                 <label className="host-control-option host-control-toggle">
                   <svg aria-hidden="true" viewBox="0 0 24 24">
                     <path d="M4 5.5C4 4.7 4.7 4 5.5 4h13c.8 0 1.5.7 1.5 1.5v9c0 .8-.7 1.5-1.5 1.5H9l-4 4v-4.5c-.6-.2-1-.8-1-1.5v-8.5Z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="2" />
@@ -3282,6 +3495,31 @@ export default function MeetingRoomPage() {
           </div>
         </section>
       </div>
+      {qualityToast && selfRole === "teacher" ? (
+        <div className="quality-auto-toast" role="status" aria-live="polite">
+          <span>{qualityToast.message}</span>
+          {qualityToast.undoMode ? (
+            <button
+              type="button"
+              onClick={() => {
+                const undoMode = qualityToast.undoMode;
+                if (!undoMode) {
+                  return;
+                }
+                if (undoMode === "smart-auto") {
+                  handleTeacherPrimaryModeChange("smart-auto");
+                } else {
+                  setAutoEnabled(false);
+                  applyTeacherMode(undoMode, "manual");
+                }
+                setQualityToast(null);
+              }}
+            >
+              Undo
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {isShareFocusOpen && canStudentFocusShare ? (
         <div
           className="share-focus-overlay"

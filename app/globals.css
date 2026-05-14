@@ -2145,6 +2145,90 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.host-control-option .quality-subtext {
+  display: block;
+  margin-top: 2px;
+  color: rgba(247, 250, 252, 0.72);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.teaching-mode-block {
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+}
+
+.teaching-mode-content {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.teaching-mode-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.1;
+}
+
+.teaching-mode-active-hint {
+  color: rgba(247, 250, 252, 0.78);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.teaching-mode-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.teaching-mode-pill {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 38px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 9px;
+  background: rgba(23, 28, 39, 0.6);
+  color: rgba(247, 250, 252, 0.9);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.teaching-mode-pill strong {
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.teaching-mode-pill small {
+  color: rgba(247, 250, 252, 0.72);
+  font-size: 0.64rem;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.teaching-mode-pill:hover {
+  border-color: rgba(199, 227, 134, 0.7);
+  background: rgba(41, 50, 67, 0.76);
+}
+
+.teaching-mode-pill:focus-visible {
+  outline: 2px solid rgba(199, 227, 134, 0.9);
+  outline-offset: 1px;
+}
+
+.teaching-mode-pill.active {
+  border-color: rgba(199, 227, 134, 0.95);
+  background: linear-gradient(145deg, rgba(173, 219, 78, 0.28), rgba(145, 202, 58, 0.16));
+  box-shadow: 0 0 0 1px rgba(199, 227, 134, 0.22), 0 8px 16px rgba(9, 15, 10, 0.35);
+}
+
 .host-control-option button,
 .host-control-option input {
   cursor: pointer;
@@ -2187,6 +2271,87 @@ h1 {
 
 .host-control-toggle input:checked::before {
   transform: translateX(16px);
+}
+
+.host-control-advanced {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.host-control-advanced > summary {
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.host-control-advanced-body {
+  display: grid;
+  gap: 8px;
+  padding: 0 10px 10px;
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.host-control-advanced-body select {
+  margin-left: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(18, 24, 39, 0.8);
+  color: var(--ink);
+  font-size: 0.74rem;
+}
+
+.host-advanced-auto-button {
+  justify-self: start;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.quality-status-text,
+.quality-health-text {
+  margin: 8px 0 0;
+  color: rgba(247, 250, 252, 0.86);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.quality-auto-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 82px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 11px;
+  background: rgba(17, 17, 17, 0.9);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.quality-auto-toast button {
+  padding: 4px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--ink);
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .meeting-code-corner-wrap {
