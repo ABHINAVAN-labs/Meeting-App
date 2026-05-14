@@ -41,6 +41,7 @@ export type MeetingEvent =
   | { type: "participant-left"; participantId: string }
   | { type: "participant-status-updated"; participantId: string; status: ParticipantStatus }
   | { type: "participant-hand-updated"; participantId: string; handRaised: boolean; handRaisedAt: number | null }
+  | { type: "participant-media-control"; participantId: string; media: "camera" | "mic"; enabled: boolean }
   | {
       type: "signal";
       fromParticipantId: string;

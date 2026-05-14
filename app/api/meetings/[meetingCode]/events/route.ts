@@ -44,6 +44,9 @@ export async function GET(_: Request, context: { params: Promise<{ meetingCode: 
         if (event.type === "signal" && event.toParticipantId !== session.participantId) {
           return;
         }
+        if (event.type === "participant-media-control" && event.participantId !== session.participantId) {
+          return;
+        }
 
         controller.enqueue(encoder.encode(encodeEvent(event)));
       });

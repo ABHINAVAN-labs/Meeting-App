@@ -1753,6 +1753,7 @@ h1 {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+  transform: translateY(10px);
 }
 
 .room-ai-chat-form.sending {
@@ -2522,7 +2523,95 @@ h1 {
   background: rgba(255, 255, 255, 0.12);
 }
 
-.participant-menu-row button {
+.participant-actions-button {
+  display: grid;
+  width: 38px;
+  min-height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.participant-actions-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.participant-actions-dots span {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--ink);
+}
+
+.participant-actions-menu {
+  position: relative;
+  z-index: 2;
+}
+
+.participant-actions-dropdown {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 8px);
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(4, 34px);
+  align-items: center;
+  gap: 8px;
+  width: 172px;
+  min-height: 42px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 12px;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  background: rgba(17, 17, 17, 0.9);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+  transform: translateY(-50%);
+  transition: opacity 180ms ease, transform 180ms ease, visibility 0s linear 180ms;
+}
+
+.participant-actions-dropdown button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: var(--ink);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.participant-actions-dropdown button svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.participant-actions-dropdown .participant-actions-close {
+  color: #ff5d63;
+}
+
+.participant-actions-menu.open .participant-actions-dropdown {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transform: translateY(-50%);
+  transition-delay: 0s;
+}
+
+.participant-menu-row > button {
   min-height: 34px;
   padding: 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -2747,7 +2836,7 @@ h1 {
 
 .student-tile .participant-video,
 .student-tile .participant-placeholder {
-  height: 130px;
+  height: 188.4px;
 }
 
 .spotlight-student-tile .participant-video,
