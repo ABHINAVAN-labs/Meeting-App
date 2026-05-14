@@ -207,7 +207,7 @@ export async function POST(request: Request) {
 
   const participantId = request.headers.get("x-participant-id")?.trim() ?? "";
   const meetingCode = typeof body.meetingCode === "string" ? body.meetingCode : "";
-  if (participantId && meetingCode && !canParticipantUseAiChat(meetingCode, participantId)) {
+  if (participantId && meetingCode && !(await canParticipantUseAiChat(meetingCode, participantId))) {
     return NextResponse.json({ error: "AI Chat has been Disabled." }, { status: 403 });
   }
 

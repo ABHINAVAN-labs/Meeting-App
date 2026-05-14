@@ -7,14 +7,16 @@ import type { JoinMeetingRequest } from "../../../../lib/meetings/types";
 export async function POST(request: Request) {
   const payload = (await request.json()) as Partial<JoinMeetingRequest>;
 
-  const result = joinMeeting({
+  const result = await joinMeeting({
     meetingCode: payload.meetingCode ?? "",
     displayName: payload.displayName ?? "",
-    role: payload.role === "teacher" ? "teacher" : "student"
+    role: payload.role === "teacher" ? "teacher" : "student",
+    identityType: payload.identityType === "phone" ? "phone" : payload.identityType === "email" ? "email" : undefined,
+    identityValue: typeof payload.identityValue === "string" ? payload.identityValue : undefined
   });
 
   if (!result.ok) {
-    return NextResponse.json({ message: result.message }, { status: 400 });
+    return NextResponse.json({ message: result.message }, { status: result.status ?? 400 });
   }
 
   const cookieStore = await cookies();

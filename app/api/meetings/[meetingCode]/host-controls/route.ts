@@ -29,7 +29,7 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   }
 
   const payload = (await request.json()) as Partial<HostControlsPayload>;
-  const result = updateRoomHostControls(normalizedCode, participantId, {
+  const result = await updateRoomHostControls(normalizedCode, participantId, {
     muteAll: Boolean(payload.muteAll),
     forceStudentCamerasOn:
       typeof payload.forceStudentCamerasOn === "boolean" ? payload.forceStudentCamerasOn : undefined,

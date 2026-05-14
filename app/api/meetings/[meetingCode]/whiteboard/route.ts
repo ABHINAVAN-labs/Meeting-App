@@ -28,7 +28,7 @@ export async function GET(request: Request, context: { params: Promise<{ meeting
     return NextResponse.json({ message: "Unauthorized for this meeting." }, { status: 403 });
   }
 
-  const result = getMeetingWhiteboard(normalizedCode, participantId);
+  const result = await getMeetingWhiteboard(normalizedCode, participantId);
   if (!result.ok) {
     return NextResponse.json({ message: result.message }, { status: 403 });
   }
@@ -58,11 +58,10 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
     return NextResponse.json({ message: "Invalid request body." }, { status: 400 });
   }
 
-  const result = applyMeetingWhiteboardAction(normalizedCode, participantId, payload);
+  const result = await applyMeetingWhiteboardAction(normalizedCode, participantId, payload);
   if (!result.ok) {
     return NextResponse.json({ message: result.message }, { status: result.status ?? 400 });
   }
 
   return NextResponse.json({ whiteboard: result.whiteboard });
 }
-

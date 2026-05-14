@@ -44,6 +44,8 @@ function normalizeParticipantStatus(participant: Participant): Participant {
   const normalized: Participant = {
     ...participant,
     status: participant.status ?? "active",
+    joinIdentityType: participant.joinIdentityType ?? null,
+    joinIdentityHash: participant.joinIdentityHash ?? null,
     handRaised: participant.handRaised ?? false,
     handRaisedAt: participant.handRaisedAt ?? null
   };

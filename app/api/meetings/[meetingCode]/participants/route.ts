@@ -26,18 +26,18 @@ export async function GET(
     return NextResponse.json({ message: "Join this meeting from lobby first." }, { status: 403 });
   }
 
-  const participants = listRoomParticipants(normalizedCode, participantId);
+  const participants = await listRoomParticipants(normalizedCode, participantId);
   const sessionParticipant = participants.find((participant) => participant.id === participantId) ?? null;
   const pendingParticipants = participants.filter((participant) => participant.status === "pending");
   const whiteboardResult =
-    sessionParticipant?.role === "teacher" ? getMeetingWhiteboard(normalizedCode, participantId) : null;
+    sessionParticipant?.role === "teacher" ? await getMeetingWhiteboard(normalizedCode, participantId) : null;
 
   return NextResponse.json({
     participants,
     pendingParticipants,
     sessionParticipant,
-    hostControls: getRoomHostControls(normalizedCode),
-    meetingChatMessages: listVisibleMeetingChatMessages(normalizedCode, participantId),
+    hostControls: await getRoomHostControls(normalizedCode),
+    meetingChatMessages: await listVisibleMeetingChatMessages(normalizedCode, participantId),
     whiteboard: whiteboardResult?.ok ? whiteboardResult.whiteboard : null,
     sessionParticipantId: participantId
   });

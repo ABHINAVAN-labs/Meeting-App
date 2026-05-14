@@ -17,7 +17,7 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   const headerParticipantId = request.headers.get("x-participant-id")?.trim() ?? "";
   const cookieStore = await cookies();
   const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
-  const participants = listRoomParticipants(normalizedCode, headerParticipantId || session?.participantId);
+  const participants = await listRoomParticipants(normalizedCode, headerParticipantId || session?.participantId);
 
   const participantId = headerParticipantId || (session?.meetingCode === normalizedCode ? session.participantId : "");
   const current = participants.find((participant) => participant.id === participantId);

@@ -10,6 +10,8 @@ type Role = "student" | "teacher";
 type Profile = {
   name: string;
   role: Role;
+  identityType?: "email" | "phone";
+  identityValue?: string;
 };
 
 type JoinResponse = {
@@ -151,6 +153,10 @@ export default function MeetingCodePage() {
       setJoinError("Profile is incomplete. Please re-enter from landing.");
       return;
     }
+    if (profile.role === "student" && (!profile.identityType || !profile.identityValue?.trim())) {
+      setJoinError("Student email or phone is required. Please re-enter from landing.");
+      return;
+    }
 
     setIsJoining(true);
     setJoinError("");
@@ -163,7 +169,9 @@ export default function MeetingCodePage() {
       body: JSON.stringify({
         meetingCode,
         displayName: profile.name,
-        role: profile.role
+        role: profile.role,
+        identityType: profile.role === "student" ? profile.identityType : undefined,
+        identityValue: profile.role === "student" ? profile.identityValue : undefined
       })
     });
 

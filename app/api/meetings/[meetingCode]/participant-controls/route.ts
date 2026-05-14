@@ -34,7 +34,7 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
     return NextResponse.json({ message: "Invalid participant media payload." }, { status: 400 });
   }
 
-  const result = controlParticipantMedia(normalizedCode, actorParticipantId, participantId, media, payload.enabled);
+  const result = await controlParticipantMedia(normalizedCode, actorParticipantId, participantId, media, payload.enabled);
   if (!result.ok) {
     return NextResponse.json({ message: result.message }, { status: 403 });
   }

@@ -2112,6 +2112,29 @@ export default function MeetingRoomPage() {
     setHostControls(payload.hostControls);
   }
 
+  async function banFromRoom(participantId: string) {
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/ban`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(actorParticipantId ? { "x-participant-id": actorParticipantId } : {})
+      },
+      body: JSON.stringify({ participantId })
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      setAccessError(payload.message ?? "Could not ban participant.");
+      return;
+    }
+
+    removedParticipantIdsRef.current.add(participantId);
+    setActiveStudents((prev) => prev.filter((participant) => participant.id !== participantId));
+    setRaisedHands((prev) => prev.filter((participant) => participant.id !== participantId));
+    setRemoteParticipants((prev) => prev.filter((participant) => participant.id !== participantId));
+  }
+
   async function fetchWhiteboardSnapshot() {
     if (!readableMeetingCode) {
       return;
@@ -2679,7 +2702,12 @@ export default function MeetingRoomPage() {
                               <path d="M8 12h8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.2" />
                             </svg>
                           </button>
-                          <button className="participant-actions-close" type="button" aria-label="Close action">
+                          <button
+                            className="participant-actions-close"
+                            type="button"
+                            aria-label={`Ban ${participant.displayName} from this meeting`}
+                            onClick={() => void banFromRoom(participant.id)}
+                          >
                             <svg aria-hidden="true" viewBox="0 0 24 24">
                               <path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.8" />
                             </svg>

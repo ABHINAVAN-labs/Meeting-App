@@ -9,6 +9,8 @@ type Role = "student" | "teacher";
 type Profile = {
   name: string;
   role: Role;
+  identityType?: "email" | "phone";
+  identityValue?: string;
 };
 
 const PROFILE_STORAGE_KEY = "meeting_app_profile";
@@ -28,6 +30,8 @@ export default function LandingPage() {
   const [role, setRole] = useState<Role>("student");
   const [name, setName] = useState("");
   const [meetingCode, setMeetingCode] = useState("");
+  const [identityType, setIdentityType] = useState<"email" | "phone">("email");
+  const [identityValue, setIdentityValue] = useState("");
   const [error, setError] = useState("");
 
   function persistProfile(profile: Profile) {
@@ -45,10 +49,16 @@ export default function LandingPage() {
       setError("Enter your name.");
       return;
     }
+    if (role === "student" && !identityValue.trim()) {
+      setError(`Enter your ${identityType}.`);
+      return;
+    }
 
     persistProfile({
       name: name.trim(),
-      role
+      role,
+      identityType: role === "student" ? identityType : undefined,
+      identityValue: role === "student" ? identityValue.trim() : undefined
     });
 
     setError("");
@@ -154,6 +164,30 @@ export default function LandingPage() {
               value={meetingCode}
               onChange={(event) => setMeetingCode(event.target.value)}
             />
+
+            {role === "student" ? (
+              <>
+                <label htmlFor="identity-type">ID Type</label>
+                <select
+                  id="identity-type"
+                  name="identity-type"
+                  value={identityType}
+                  onChange={(event) => setIdentityType(event.target.value === "phone" ? "phone" : "email")}
+                >
+                  <option value="email">Email</option>
+                  <option value="phone">Phone</option>
+                </select>
+                <label htmlFor="identity-value">{identityType === "email" ? "Email" : "Phone"}</label>
+                <input
+                  id="identity-value"
+                  name="identity-value"
+                  placeholder={identityType === "email" ? "student@email.com" : "+919876543210"}
+                  type={identityType === "email" ? "email" : "tel"}
+                  value={identityValue}
+                  onChange={(event) => setIdentityValue(event.target.value)}
+                />
+              </>
+            ) : null}
 
             {error ? <p className="form-error">{error}</p> : null}
 
