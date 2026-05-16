@@ -4,6 +4,7 @@ import { SESSION_COOKIE_NAME } from "../../../../../lib/meetings/constants";
 import { leaveMeeting } from "../../../../../lib/meetings/service";
 import { parseSessionCookie } from "../../../../../lib/meetings/session";
 import { normalizeMeetingCode } from "../../../../../lib/meetings/validation";
+import { invalidateRejoinNonce } from "../../../../../lib/security/rejoinToken";
 
 export async function POST(request: Request, context: { params: Promise<{ meetingCode: string }> }) {
   const { meetingCode } = await context.params;
@@ -20,11 +21,15 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   }
 
   const cookieStore = await cookies();
-  const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const session = await parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value, request);
   if (!session || session.meetingCode !== normalizedCode) {
     return NextResponse.json({ ok: true });
   }
 
+  invalidateRejoinNonce(session.nonce);
   await leaveMeeting(normalizedCode, session.participantId);
+  cookieStore.delete(SESSION_COOKIE_NAME);
   return NextResponse.json({ ok: true });
 }
+
+

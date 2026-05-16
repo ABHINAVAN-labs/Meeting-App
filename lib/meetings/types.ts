@@ -1,18 +1,22 @@
 export type ParticipantRole = "student" | "teacher";
 export type ParticipantStatus = "pending" | "active" | "rejected";
-export type JoinIdentityType = "email" | "phone";
 
 export type Participant = {
   id: string;
   displayName: string;
+  displayNameHash: string;
   role: ParticipantRole;
   status: ParticipantStatus;
-  joinIdentityType: JoinIdentityType | null;
-  joinIdentityHash: string | null;
   handRaised: boolean;
   handRaisedAt: number | null;
   joinedAt: number;
   lastSeenAt: number;
+  uuidv7Nonce: string;
+  active: boolean;
+  rejoinNonce: string | null;
+  ipPrefix: string;
+  uaHash: string;
+  expiresAt: string;
 };
 
 export type MeetingChatMessage = {
@@ -121,6 +125,4 @@ export type JoinMeetingRequest = {
   meetingCode: string;
   displayName: string;
   role: ParticipantRole;
-  identityType?: JoinIdentityType;
-  identityValue?: string;
 };

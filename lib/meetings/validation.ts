@@ -1,5 +1,4 @@
 import { MEETING_CODE_PATTERN, PARTICIPANT_NAME_MAX_LENGTH, PARTICIPANT_NAME_MIN_LENGTH } from "./constants";
-import type { JoinIdentityType } from "./types";
 
 export function normalizeMeetingCode(rawCode: string): string | null {
   const trimmed = rawCode.trim();
@@ -24,36 +23,9 @@ export function normalizeParticipantName(rawName: string): string | null {
   if (normalized.length < PARTICIPANT_NAME_MIN_LENGTH || normalized.length > PARTICIPANT_NAME_MAX_LENGTH) {
     return null;
   }
+  if (!/^[\p{L}\p{N} \-]{1,64}$/u.test(normalized)) {
+    return null;
+  }
 
   return normalized;
-}
-
-function normalizeEmailIdentity(rawValue: string): string | null {
-  const normalized = rawValue.trim().toLowerCase();
-  if (!normalized || normalized.length > 254) {
-    return null;
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-    return null;
-  }
-  return normalized;
-}
-
-function normalizePhoneIdentity(rawValue: string): string | null {
-  const normalized = rawValue.replace(/[^\d+]/g, "");
-  if (!normalized) {
-    return null;
-  }
-  const withPlus = normalized.startsWith("+") ? normalized : `+${normalized}`;
-  if (!/^\+[1-9]\d{7,14}$/.test(withPlus)) {
-    return null;
-  }
-  return withPlus;
-}
-
-export function normalizeJoinIdentity(type: JoinIdentityType, rawValue: string): string | null {
-  if (type === "email") {
-    return normalizeEmailIdentity(rawValue);
-  }
-  return normalizePhoneIdentity(rawValue);
 }

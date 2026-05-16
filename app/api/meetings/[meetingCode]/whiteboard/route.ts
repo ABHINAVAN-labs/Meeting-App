@@ -9,8 +9,8 @@ import { normalizeMeetingCode } from "../../../../../lib/meetings/validation";
 const MAX_WHITEBOARD_CONTENT_LENGTH_BYTES = 200_000;
 
 function resolveParticipantId(request: Request, normalizedCode: string) {
-  return cookies().then((cookieStore) => {
-    const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  return cookies().then(async (cookieStore) => {
+    const session = await parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value, request);
     const headerParticipantId = request.headers.get("x-participant-id")?.trim() ?? "";
     return headerParticipantId || (session?.meetingCode === normalizedCode ? session.participantId : "");
   });
@@ -65,3 +65,5 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
 
   return NextResponse.json({ whiteboard: result.whiteboard });
 }
+
+

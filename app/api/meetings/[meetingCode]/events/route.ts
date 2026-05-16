@@ -10,7 +10,7 @@ function encodeEvent(event: MeetingEvent) {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
-export async function GET(_: Request, context: { params: Promise<{ meetingCode: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ meetingCode: string }> }) {
   const { meetingCode } = await context.params;
   const normalizedCode = normalizeMeetingCode(meetingCode);
 
@@ -19,7 +19,7 @@ export async function GET(_: Request, context: { params: Promise<{ meetingCode: 
   }
 
   const cookieStore = await cookies();
-  const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const session = await parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value, request);
 
   if (!session || session.meetingCode !== normalizedCode) {
     return new Response("Join this meeting from lobby first.", { status: 403 });
@@ -75,3 +75,5 @@ export async function GET(_: Request, context: { params: Promise<{ meetingCode: 
     }
   });
 }
+
+
