@@ -1,4 +1,4 @@
-import type { HostControls, Participant, ParticipantRole, ParticipantStatus } from "./types";
+import type { AttendanceRecord, AttendanceState, HostControls, Participant, ParticipantRole, ParticipantStatus } from "./types";
 import type { MeetingRecord, MeetingRepository } from "./repository";
 
 function logParityMismatch(operation: string, details: Record<string, unknown>) {
@@ -38,6 +38,16 @@ function isHostControlsEqual(a: HostControls, b: HostControls): boolean {
     a.forceStudentCamerasOn === b.forceStudentCamerasOn &&
     a.vivaTimeEnabled === b.vivaTimeEnabled &&
     a.meetingChatEnabled === b.meetingChatEnabled
+  );
+}
+
+function isAttendanceStateEqual(a: AttendanceState, b: AttendanceState): boolean {
+  return (
+    a.thresholdPercent === b.thresholdPercent &&
+    a.trackingStartedAt === b.trackingStartedAt &&
+    a.endedAt === b.endedAt &&
+    a.records.length === b.records.length &&
+    a.summary.length === b.summary.length
   );
 }
 
@@ -246,6 +256,50 @@ export class DualWriteMeetingRepository implements MeetingRepository {
     ]);
     if (!isHostControlsEqual(primary, secondary)) {
       logParityMismatch("updateHostControls", { meetingCode, updates });
+    }
+    return this.shouldReadFromPrimary() ? primary : secondary;
+  }
+
+  async getAttendanceState(meetingCode: string): Promise<AttendanceState> {
+    if (!this.secondary) {
+      return this.primary.getAttendanceState(meetingCode);
+    }
+
+    const [primary, secondary] = await Promise.all([
+      this.primary.getAttendanceState(meetingCode),
+      this.secondary.getAttendanceState(meetingCode)
+    ]);
+    if (!isAttendanceStateEqual(primary, secondary)) {
+      logParityMismatch("getAttendanceState", { meetingCode });
+    }
+    return this.shouldReadFromPrimary() ? primary : secondary;
+  }
+
+  async upsertAttendanceRecord(meetingCode: string, record: AttendanceRecord): Promise<void> {
+    if (!this.secondary) {
+      await this.primary.upsertAttendanceRecord(meetingCode, record);
+      return;
+    }
+    await Promise.all([
+      this.primary.upsertAttendanceRecord(meetingCode, record),
+      this.secondary.upsertAttendanceRecord(meetingCode, record)
+    ]);
+  }
+
+  async updateAttendanceState(
+    meetingCode: string,
+    updates: Partial<Pick<AttendanceState, "thresholdPercent" | "trackingStartedAt" | "endedAt" | "summary">>
+  ): Promise<AttendanceState> {
+    if (!this.secondary) {
+      return this.primary.updateAttendanceState(meetingCode, updates);
+    }
+
+    const [primary, secondary] = await Promise.all([
+      this.primary.updateAttendanceState(meetingCode, updates),
+      this.secondary.updateAttendanceState(meetingCode, updates)
+    ]);
+    if (!isAttendanceStateEqual(primary, secondary)) {
+      logParityMismatch("updateAttendanceState", { meetingCode });
     }
     return this.shouldReadFromPrimary() ? primary : secondary;
   }

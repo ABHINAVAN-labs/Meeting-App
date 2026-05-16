@@ -1,5 +1,14 @@
 import { getSupabaseServiceClient } from "../supabaseServer";
-import type { HostControls, JoinIdentityType, Participant, ParticipantRole, ParticipantStatus } from "./types";
+import type {
+  AttendanceRecord,
+  AttendanceState,
+  AttendanceSummaryEntry,
+  HostControls,
+  JoinIdentityType,
+  Participant,
+  ParticipantRole,
+  ParticipantStatus
+} from "./types";
 import type { MeetingRecord, MeetingRepository } from "./repository";
 
 type DbParticipantRow = {
@@ -29,6 +38,26 @@ type DbHostControlsRow = {
   viva_time_enabled: boolean;
   meeting_chat_enabled: boolean;
   updated_at: string;
+};
+
+type DbAttendanceStateRow = {
+  meeting_code: string;
+  threshold_percent: number | null;
+  tracking_started_at_ms: number | null;
+  ended_at_ms: number | null;
+  summary: AttendanceSummaryEntry[] | null;
+};
+
+type DbAttendanceRecordRow = {
+  participant_id: string;
+  meeting_code: string;
+  display_name: string;
+  role: "student";
+  joined_at_ms: number;
+  active_from_ms: number | null;
+  attended_ms: number;
+  banned: boolean;
+  last_seen_at_ms: number;
 };
 
 const DEFAULT_HOST_CONTROLS: HostControls = {
@@ -63,6 +92,29 @@ function toHostControls(row: DbHostControlsRow | null | undefined): HostControls
     forceStudentCamerasOn: row.force_student_cameras_on,
     vivaTimeEnabled: row.viva_time_enabled,
     meetingChatEnabled: row.meeting_chat_enabled
+  };
+}
+
+function toAttendanceRecord(row: DbAttendanceRecordRow): AttendanceRecord {
+  return {
+    participantId: row.participant_id,
+    displayName: row.display_name,
+    role: row.role,
+    joinedAt: row.joined_at_ms,
+    activeFrom: row.active_from_ms,
+    attendedMs: row.attended_ms,
+    banned: row.banned,
+    lastSeenAt: row.last_seen_at_ms
+  };
+}
+
+function toAttendanceState(row: DbAttendanceStateRow | null | undefined, records: AttendanceRecord[]): AttendanceState {
+  return {
+    thresholdPercent: row?.threshold_percent ?? null,
+    trackingStartedAt: row?.tracking_started_at_ms ?? null,
+    endedAt: row?.ended_at_ms ?? null,
+    records,
+    summary: row?.summary ?? []
   };
 }
 
@@ -346,5 +398,92 @@ export class SupabaseMeetingRepository implements MeetingRepository {
     }
 
     return next;
+  }
+
+  async getAttendanceState(meetingCode: string): Promise<AttendanceState> {
+    const client = this.assertClient();
+    await this.ensureMeeting(meetingCode);
+
+    const [{ data: state, error: stateError }, { data: records, error: recordsError }] = await Promise.all([
+      client
+        .from("meeting_attendance_state")
+        .select("meeting_code,threshold_percent,tracking_started_at_ms,ended_at_ms,summary")
+        .eq("meeting_code", meetingCode)
+        .maybeSingle<DbAttendanceStateRow>(),
+      client
+        .from("meeting_attendance_records")
+        .select("participant_id,meeting_code,display_name,role,joined_at_ms,active_from_ms,attended_ms,banned,last_seen_at_ms")
+        .eq("meeting_code", meetingCode)
+        .order("joined_at_ms", { ascending: true })
+        .returns<DbAttendanceRecordRow[]>()
+    ]);
+
+    if (stateError) {
+      throw stateError;
+    }
+    if (recordsError) {
+      throw recordsError;
+    }
+
+    return toAttendanceState(state, (records ?? []).map(toAttendanceRecord));
+  }
+
+  async upsertAttendanceRecord(meetingCode: string, record: AttendanceRecord): Promise<void> {
+    const client = this.assertClient();
+    await this.ensureMeeting(meetingCode);
+
+    const { error } = await client.from("meeting_attendance_records").upsert(
+      {
+        meeting_code: meetingCode,
+        participant_id: record.participantId,
+        display_name: record.displayName,
+        role: record.role,
+        joined_at_ms: record.joinedAt,
+        active_from_ms: record.activeFrom,
+        attended_ms: record.attendedMs,
+        banned: record.banned,
+        last_seen_at_ms: record.lastSeenAt
+      },
+      { onConflict: "meeting_code,participant_id" }
+    );
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  async updateAttendanceState(
+    meetingCode: string,
+    updates: Partial<Pick<AttendanceState, "thresholdPercent" | "trackingStartedAt" | "endedAt" | "summary">>
+  ): Promise<AttendanceState> {
+    const client = this.assertClient();
+    const current = await this.getAttendanceState(meetingCode);
+    const next = {
+      threshold_percent: updates.thresholdPercent ?? current.thresholdPercent,
+      tracking_started_at_ms: updates.trackingStartedAt ?? current.trackingStartedAt,
+      ended_at_ms: updates.endedAt ?? current.endedAt,
+      summary: updates.summary ?? current.summary
+    };
+
+    const { error } = await client.from("meeting_attendance_state").upsert(
+      {
+        meeting_code: meetingCode,
+        ...next,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "meeting_code" }
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    return {
+      thresholdPercent: next.threshold_percent,
+      trackingStartedAt: next.tracking_started_at_ms,
+      endedAt: next.ended_at_ms,
+      records: current.records,
+      summary: next.summary
+    };
   }
 }

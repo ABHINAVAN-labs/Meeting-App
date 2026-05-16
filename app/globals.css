@@ -2081,6 +2081,147 @@ h1 {
   transform: translateY(-2px);
 }
 
+.attendance-threshold-control {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 4;
+}
+
+.attendance-threshold-button {
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(8, 16, 31, 0.68);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 9px 13px;
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.28);
+}
+
+.attendance-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 6, 23, 0.68);
+}
+
+.attendance-dialog {
+  width: min(520px, 100%);
+  max-height: min(76vh, 620px);
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 18px;
+  background: rgba(12, 19, 34, 0.94);
+  color: #fff;
+  padding: 18px;
+  box-shadow: 0 30px 80px rgba(2, 6, 23, 0.38);
+}
+
+.threshold-dialog {
+  width: min(420px, 100%);
+}
+
+.attendance-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.attendance-dialog-header strong {
+  font-size: 1rem;
+}
+
+.attendance-dialog-header button,
+.attendance-primary-button {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 8px 12px;
+}
+
+.attendance-primary-button {
+  width: 100%;
+  margin-top: 14px;
+  background: #f8c45a;
+  color: #172033;
+}
+
+.threshold-slider-field {
+  display: grid;
+  gap: 12px;
+  font-weight: 800;
+}
+
+.threshold-slider-field input {
+  width: 100%;
+  accent-color: #f8c45a;
+}
+
+.attendance-list {
+  display: grid;
+  gap: 8px;
+}
+
+.attendance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.attendance-row span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-row.present strong {
+  color: #8df0b5;
+}
+
+.attendance-row.absent strong {
+  color: #ffd27a;
+}
+
+.attendance-row.banned strong {
+  color: #ff9a9a;
+}
+
+.student-attendance-result {
+  display: grid;
+  gap: 8px;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.attendance-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 94px;
+  z-index: 260;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(127, 29, 29, 0.92);
+  color: #fff;
+  font-weight: 800;
+  padding: 10px 16px;
+}
+
 .host-controls-menu::before {
   position: absolute;
   right: 0;
