@@ -1,4 +1,12 @@
-import type { HostControls, JoinIdentityType, Participant, ParticipantRole, ParticipantStatus } from "./types";
+import type {
+  AttendanceRecord,
+  AttendanceState,
+  HostControls,
+  JoinIdentityType,
+  Participant,
+  ParticipantRole,
+  ParticipantStatus
+} from "./types";
 
 export type MeetingRecord = {
   meetingCode: string;
@@ -31,4 +39,10 @@ export interface MeetingRepository {
   ): Promise<void>;
   getHostControls(meetingCode: string): Promise<HostControls>;
   updateHostControls(meetingCode: string, updates: Partial<HostControls>): Promise<HostControls>;
+  getAttendanceState(meetingCode: string): Promise<AttendanceState>;
+  upsertAttendanceRecord(meetingCode: string, record: AttendanceRecord): Promise<void>;
+  updateAttendanceState(
+    meetingCode: string,
+    updates: Partial<Pick<AttendanceState, "thresholdPercent" | "trackingStartedAt" | "endedAt" | "summary">>
+  ): Promise<AttendanceState>;
 }

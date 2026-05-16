@@ -1,15 +1,18 @@
-import type { HostControls, JoinIdentityType, Participant, ParticipantRole, ParticipantStatus } from "./types";
+import type { AttendanceRecord, AttendanceState, HostControls, JoinIdentityType, Participant, ParticipantRole, ParticipantStatus } from "./types";
 import type { MeetingRecord, MeetingRepository } from "./repository";
 import {
   countRole as countRoleInMemory,
+  getAttendanceState,
   getHostControls,
   getParticipant,
   getParticipants,
   removeParticipant,
   touchParticipant,
+  updateAttendanceState,
   updateHostControls,
   updateParticipantHandRaised,
   updateParticipantStatus,
+  upsertAttendanceRecord,
   upsertParticipant
 } from "./store";
 
@@ -113,5 +116,20 @@ export class InMemoryMeetingRepository implements MeetingRepository {
 
   async updateHostControls(meetingCode: string, updates: Partial<HostControls>): Promise<HostControls> {
     return updateHostControls(meetingCode, updates);
+  }
+
+  async getAttendanceState(meetingCode: string): Promise<AttendanceState> {
+    return getAttendanceState(meetingCode);
+  }
+
+  async upsertAttendanceRecord(meetingCode: string, record: AttendanceRecord): Promise<void> {
+    upsertAttendanceRecord(meetingCode, record);
+  }
+
+  async updateAttendanceState(
+    meetingCode: string,
+    updates: Partial<Pick<AttendanceState, "thresholdPercent" | "trackingStartedAt" | "endedAt" | "summary">>
+  ): Promise<AttendanceState> {
+    return updateAttendanceState(meetingCode, updates);
   }
 }

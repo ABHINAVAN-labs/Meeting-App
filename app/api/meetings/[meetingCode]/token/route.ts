@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME } from "../../../../../lib/meetings/constants";
 import { parseSessionCookie } from "../../../../../lib/meetings/session";
-import { listRoomParticipants } from "../../../../../lib/meetings/service";
+import { getRoomAttendanceState, listRoomParticipants } from "../../../../../lib/meetings/service";
 import { normalizeMeetingCode } from "../../../../../lib/meetings/validation";
 import { createLiveKitToken, getLiveKitUrl, LIVEKIT_TOKEN_TTL_SECONDS } from "../../../../../lib/realtime/livekit";
 
@@ -29,6 +29,10 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   }
   if (current.status !== "active") {
     return NextResponse.json({ message: "Waiting for teacher approval." }, { status: 403 });
+  }
+  const attendance = await getRoomAttendanceState(normalizedCode);
+  if (attendance.endedAt) {
+    return NextResponse.json({ message: "This meeting has ended." }, { status: 403 });
   }
 
   const livekitUrl = getLiveKitUrl();
