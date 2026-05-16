@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "crypto";
+﻿import { createHash, randomUUID } from "crypto";
 import { normalizeMeetingCode, normalizeParticipantName } from "./validation";
 import {
   addMeetingChatMessage,
@@ -9,8 +9,19 @@ import {
   subscribeToRoom
 } from "./store";
 import { getMeetingRepository } from "./repository.factory";
-import type { HostControls, JoinMeetingRequest, MeetingChatMessage, Participant } from "./types";
-import type { WhiteboardAction, WhiteboardDrawable, WhiteboardPoint, WhiteboardState } from "./types";
+import type {
+  AttendanceRecord,
+  AttendanceState,
+  AttendanceSummaryEntry,
+  HostControls,
+  JoinMeetingRequest,
+  MeetingChatMessage,
+  Participant,
+  WhiteboardAction,
+  WhiteboardDrawable,
+  WhiteboardPoint,
+  WhiteboardState
+} from "./types";
 import { checkIpJoinRateLimit, checkMeetingJoinRateLimit } from "../security/rateLimit";
 import { ensureMeetingRegistryRecord, getMeetingRegistryRecord } from "../security/meetingRegistry";
 import { generateParticipantIdentity } from "../security/identity";
@@ -32,6 +43,8 @@ const WHITEBOARD_MIN_COORD = 0;
 const WHITEBOARD_MAX_COORD = 10000;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const ACTIVE_TEACHER_UNIQUE_INDEX = "uniq_active_teacher_per_meeting";
+const MIN_ATTENDANCE_THRESHOLD = 1;
+const MAX_ATTENDANCE_THRESHOLD = 100;
 
 export type JoinResult =
   | { ok: true; meetingCode: string; participant: Participant; status: Participant["status"] }
@@ -53,6 +66,75 @@ function isActiveTeacherUniquenessViolation(error: unknown): boolean {
     return maybeError.message.includes(ACTIVE_TEACHER_UNIQUE_INDEX);
   }
   return false;
+}
+
+function clampAttendanceThreshold(value: number): number {
+  return Math.min(MAX_ATTENDANCE_THRESHOLD, Math.max(MIN_ATTENDANCE_THRESHOLD, Math.round(value)));
+}
+
+function createAttendanceRecord(participant: Participant): AttendanceRecord {
+  return {
+    participantId: participant.id,
+    displayName: participant.displayName,
+    role: "student",
+    joinedAt: participant.joinedAt,
+    activeFrom: null,
+    attendedMs: 0,
+    banned: false,
+    lastSeenAt: participant.lastSeenAt
+  };
+}
+
+function addAttendanceTime(record: AttendanceRecord, atMs: number): AttendanceRecord {
+  if (!record.activeFrom || atMs <= record.activeFrom) {
+    return { ...record, activeFrom: null, lastSeenAt: atMs };
+  }
+
+  return {
+    ...record,
+    activeFrom: null,
+    attendedMs: record.attendedMs + (atMs - record.activeFrom),
+    lastSeenAt: atMs
+  };
+}
+
+async function ensureStudentAttendanceRecord(
+  meetingCode: string,
+  participant: Participant,
+  activeFrom: number | null = null
+): Promise<void> {
+  if (participant.role !== "student") {
+    return;
+  }
+
+  const attendance = await meetingRepo.getAttendanceState(meetingCode);
+  const existing = attendance.records.find((record) => record.participantId === participant.id);
+  const record = existing ?? createAttendanceRecord(participant);
+  await meetingRepo.upsertAttendanceRecord(meetingCode, {
+    ...record,
+    displayName: participant.displayName,
+    activeFrom: record.activeFrom ?? activeFrom,
+    lastSeenAt: participant.lastSeenAt
+  });
+}
+
+function buildAttendanceSummary(attendance: AttendanceState, endedAt: number): AttendanceSummaryEntry[] {
+  const thresholdPercent = attendance.thresholdPercent ?? 100;
+  const trackingStartedAt = attendance.trackingStartedAt ?? endedAt;
+  const totalMs = Math.max(0, endedAt - trackingStartedAt);
+
+  return attendance.records.map((record) => {
+    const finalRecord = record.activeFrom ? addAttendanceTime(record, endedAt) : record;
+    const attendancePercent = totalMs > 0 ? Math.min(100, Math.round((finalRecord.attendedMs / totalMs) * 100)) : 0;
+    const status = finalRecord.banned ? "banned" : attendancePercent >= thresholdPercent ? "present" : "absent";
+    return {
+      participantId: finalRecord.participantId,
+      displayName: finalRecord.displayName,
+      status,
+      attendancePercent,
+      attendedMs: finalRecord.attendedMs
+    };
+  });
 }
 
 export async function joinMeeting(
@@ -104,6 +186,12 @@ export async function joinMeeting(
     return { ok: false, message: "Join attempt is rate-limited.", status: 429 };
   }
 
+  await meetingRepo.ensureMeeting(meetingCode);
+  const attendance = await meetingRepo.getAttendanceState(meetingCode);
+  if (attendance.endedAt) {
+    return { ok: false, message: "This meeting has already ended.", status: 403 };
+  }
+
   const now = Date.now();
   const participant: Participant = {
     id: participantId,
@@ -123,7 +211,6 @@ export async function joinMeeting(
     expiresAt: registry.expires_at
   };
 
-  await meetingRepo.ensureMeeting(meetingCode);
   try {
     await meetingRepo.upsertParticipant(meetingCode, participant);
   } catch (error) {
@@ -132,9 +219,25 @@ export async function joinMeeting(
     }
     throw error;
   }
+  await ensureStudentAttendanceRecord(meetingCode, participant);
   publishEvent(meetingCode, { type: "participant-joined", participant });
 
   return { ok: true, meetingCode, participant, status: participant.status };
+}
+
+export async function getRoomAttendanceState(meetingCode: string): Promise<AttendanceState> {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return {
+      thresholdPercent: null,
+      trackingStartedAt: null,
+      endedAt: null,
+      records: [],
+      summary: []
+    };
+  }
+
+  return meetingRepo.getAttendanceState(normalizedMeetingCode);
 }
 
 export async function listRoomParticipants(meetingCode: string, participantId?: string): Promise<Participant[]> {
@@ -239,6 +342,14 @@ export async function leaveMeeting(meetingCode: string, participantId: string): 
   const participant = await meetingRepo.getParticipant(normalizedMeetingCode, participantId);
   if (!participant) {
     return;
+  }
+
+  if (participant.role === "student") {
+    const attendance = await meetingRepo.getAttendanceState(normalizedMeetingCode);
+    const record = attendance.records.find((entry) => entry.participantId === participantId);
+    if (record) {
+      await meetingRepo.upsertAttendanceRecord(normalizedMeetingCode, addAttendanceTime(record, Date.now()));
+    }
   }
 
   await meetingRepo.upsertParticipant(normalizedMeetingCode, {
@@ -476,6 +587,9 @@ export async function approveParticipant(
 
   const updated = await meetingRepo.updateParticipantStatus(normalizedMeetingCode, targetParticipantId, "active");
   if (updated) {
+    const attendance = await meetingRepo.getAttendanceState(normalizedMeetingCode);
+    const activeFrom = attendance.trackingStartedAt && !attendance.endedAt ? Date.now() : null;
+    await ensureStudentAttendanceRecord(normalizedMeetingCode, updated, activeFrom);
     publishEvent(normalizedMeetingCode, { type: "participant-status-updated", participantId: targetParticipantId, status: "active" });
   }
 
@@ -532,6 +646,12 @@ export async function removeParticipantFromRoom(
     return { ok: false, message: "Teacher cannot be removed from this control." };
   }
 
+  const attendance = await meetingRepo.getAttendanceState(normalizedMeetingCode);
+  const record = attendance.records.find((entry) => entry.participantId === targetParticipantId);
+  if (record) {
+    await meetingRepo.upsertAttendanceRecord(normalizedMeetingCode, addAttendanceTime(record, Date.now()));
+  }
+
   const removed = await meetingRepo.removeParticipant(normalizedMeetingCode, targetParticipantId);
   if (removed) {
     publishEvent(normalizedMeetingCode, { type: "participant-left", participantId: targetParticipantId });
@@ -563,12 +683,99 @@ export async function banParticipantFromRoom(
   await meetingRepo.banParticipantSession(normalizedMeetingCode, target.id, actorParticipantId);
   invalidateRejoinNonce(target.rejoinNonce);
 
+  const attendance = await meetingRepo.getAttendanceState(normalizedMeetingCode);
+  const record = attendance.records.find((entry) => entry.participantId === targetParticipantId) ?? createAttendanceRecord(target);
+  await meetingRepo.upsertAttendanceRecord(normalizedMeetingCode, {
+    ...addAttendanceTime(record, Date.now()),
+    banned: true
+  });
+
   const removed = await meetingRepo.removeParticipant(normalizedMeetingCode, targetParticipantId);
   if (removed) {
     publishEvent(normalizedMeetingCode, { type: "participant-left", participantId: targetParticipantId });
   }
 
   return { ok: true, bannedUntil: target.expiresAt };
+}
+
+export async function setAttendanceThreshold(
+  meetingCode: string,
+  actorParticipantId: string,
+  thresholdPercent: number
+): Promise<{ ok: true; attendance: AttendanceState } | { ok: false; message: string; status?: number }> {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code.", status: 400 };
+  }
+  if (!(await assertActiveTeacher(normalizedMeetingCode, actorParticipantId))) {
+    return { ok: false, message: "Only active teacher can set attendance threshold.", status: 403 };
+  }
+
+  const current = await meetingRepo.getAttendanceState(normalizedMeetingCode);
+  if (current.endedAt) {
+    return { ok: false, message: "Meeting has already ended.", status: 400 };
+  }
+
+  const now = Date.now();
+  const nextThreshold = clampAttendanceThreshold(thresholdPercent);
+  const participants = await meetingRepo.getParticipants(normalizedMeetingCode);
+  await Promise.all(
+    participants
+      .filter((participant) => participant.role === "student")
+      .map((participant) => {
+        const existing = current.records.find((record) => record.participantId === participant.id) ?? createAttendanceRecord(participant);
+        return meetingRepo.upsertAttendanceRecord(normalizedMeetingCode, {
+          ...existing,
+          displayName: participant.displayName,
+          activeFrom: existing.activeFrom ?? (participant.status === "active" ? now : null),
+          lastSeenAt: now
+        });
+      })
+  );
+
+  const attendance = await meetingRepo.updateAttendanceState(normalizedMeetingCode, {
+    thresholdPercent: nextThreshold,
+    trackingStartedAt: current.trackingStartedAt ?? now
+  });
+  publishEvent(normalizedMeetingCode, { type: "attendance-updated" });
+  return { ok: true, attendance };
+}
+
+export async function endMeetingWithAttendance(
+  meetingCode: string,
+  actorParticipantId: string
+): Promise<{ ok: true; attendance: AttendanceState } | { ok: false; message: string; status?: number }> {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return { ok: false, message: "Invalid meeting code.", status: 400 };
+  }
+  if (!(await assertActiveTeacher(normalizedMeetingCode, actorParticipantId))) {
+    return { ok: false, message: "Only active teacher can end meeting.", status: 403 };
+  }
+
+  const current = await meetingRepo.getAttendanceState(normalizedMeetingCode);
+  if (!current.thresholdPercent || !current.trackingStartedAt) {
+    return { ok: false, message: "Set attendance threshold before ending the meeting.", status: 400 };
+  }
+  if (current.endedAt) {
+    return { ok: true, attendance: current };
+  }
+
+  const endedAt = Date.now();
+  const closedRecords = await Promise.all(
+    current.records.map(async (record) => {
+      const next = record.activeFrom ? addAttendanceTime(record, endedAt) : record;
+      await meetingRepo.upsertAttendanceRecord(normalizedMeetingCode, next);
+      return next;
+    })
+  );
+  const summary = buildAttendanceSummary({ ...current, records: closedRecords }, endedAt);
+  const attendance = await meetingRepo.updateAttendanceState(normalizedMeetingCode, {
+    endedAt,
+    summary
+  });
+  publishEvent(normalizedMeetingCode, { type: "meeting-ended" });
+  return { ok: true, attendance };
 }
 
 export async function updateRoomHostControls(
@@ -744,3 +951,4 @@ export async function updateParticipantRejoinNonce(
   await meetingRepo.upsertParticipant(normalizedMeetingCode, updated);
   return updated;
 }
+

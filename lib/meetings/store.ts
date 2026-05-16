@@ -1,4 +1,6 @@
 import type {
+  AttendanceRecord,
+  AttendanceState,
   HostControls,
   MeetingChatMessage,
   MeetingEvent,
@@ -18,6 +20,16 @@ const DEFAULT_HOST_CONTROLS: HostControls = {
 };
 const WHITEBOARD_MAX_DRAWABLES = 600;
 const WHITEBOARD_MAX_HISTORY = 30;
+
+function createEmptyAttendanceState(): AttendanceState {
+  return {
+    thresholdPercent: null,
+    trackingStartedAt: null,
+    endedAt: null,
+    records: [],
+    summary: []
+  };
+}
 
 function createEmptyWhiteboardState(): WhiteboardState {
   return {
@@ -64,10 +76,45 @@ function getOrCreateRoom(meetingCode: string): Room {
     participants: new Map<string, Participant>(),
     chatMessages: [],
     hostControls: normalizeHostControls(),
-    whiteboard: createEmptyWhiteboardState()
+    whiteboard: createEmptyWhiteboardState(),
+    attendance: createEmptyAttendanceState()
   };
   rooms.set(meetingCode, created);
   return created;
+}
+
+export function getAttendanceState(meetingCode: string): AttendanceState {
+  const room = getOrCreateRoom(meetingCode);
+  room.attendance ??= createEmptyAttendanceState();
+  room.attendance.records ??= [];
+  room.attendance.summary ??= [];
+  return room.attendance;
+}
+
+export function upsertAttendanceRecord(meetingCode: string, record: AttendanceRecord): void {
+  const attendance = getAttendanceState(meetingCode);
+  const existingIndex = attendance.records.findIndex((entry) => entry.participantId === record.participantId);
+  if (existingIndex >= 0) {
+    attendance.records[existingIndex] = record;
+    return;
+  }
+  attendance.records.push(record);
+}
+
+export function updateAttendanceState(
+  meetingCode: string,
+  updates: Partial<Pick<AttendanceState, "thresholdPercent" | "trackingStartedAt" | "endedAt" | "summary">>
+): AttendanceState {
+  const attendance = getAttendanceState(meetingCode);
+  const next: AttendanceState = {
+    ...attendance,
+    ...updates,
+    records: attendance.records,
+    summary: updates.summary ?? attendance.summary
+  };
+  const room = getOrCreateRoom(meetingCode);
+  room.attendance = next;
+  return room.attendance;
 }
 
 export function upsertParticipant(meetingCode: string, participant: Participant): Room {

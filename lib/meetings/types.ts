@@ -35,6 +35,35 @@ export type HostControls = {
   meetingChatEnabled: boolean;
 };
 
+export type AttendanceStatus = "present" | "absent" | "banned";
+
+export type AttendanceRecord = {
+  participantId: string;
+  displayName: string;
+  role: "student";
+  joinedAt: number;
+  activeFrom: number | null;
+  attendedMs: number;
+  banned: boolean;
+  lastSeenAt: number;
+};
+
+export type AttendanceSummaryEntry = {
+  participantId: string;
+  displayName: string;
+  status: AttendanceStatus;
+  attendancePercent: number;
+  attendedMs: number;
+};
+
+export type AttendanceState = {
+  thresholdPercent: number | null;
+  trackingStartedAt: number | null;
+  endedAt: number | null;
+  records: AttendanceRecord[];
+  summary: AttendanceSummaryEntry[];
+};
+
 export type WhiteboardTool =
   | "pen"
   | "highlighter"
@@ -103,6 +132,7 @@ export type Room = {
   chatMessages: MeetingChatMessage[];
   hostControls: HostControls;
   whiteboard: WhiteboardState;
+  attendance: AttendanceState;
 };
 
 export type MeetingEvent =
@@ -111,6 +141,8 @@ export type MeetingEvent =
   | { type: "participant-left"; participantId: string }
   | { type: "participant-status-updated"; participantId: string; status: ParticipantStatus }
   | { type: "participant-hand-updated"; participantId: string; handRaised: boolean; handRaisedAt: number | null }
+  | { type: "attendance-updated" }
+  | { type: "meeting-ended" }
   | { type: "whiteboard-updated"; version: number }
   | { type: "participant-media-control"; participantId: string; media: "camera" | "mic"; enabled: boolean }
   | {

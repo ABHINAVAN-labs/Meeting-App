@@ -5,6 +5,7 @@ import {
   getMeetingWhiteboard,
   getRoomHostControls,
   isParticipantSessionBanned,
+  getRoomAttendanceState,
   listRoomParticipants,
   listVisibleMeetingChatMessages
 } from "../../../../../lib/meetings/service";
@@ -55,6 +56,7 @@ export async function GET(
   const pendingParticipants = participants.filter((participant) => participant.status === "pending");
   const whiteboardResult =
     sessionParticipant?.role === "teacher" ? await getMeetingWhiteboard(normalizedCode, participantId) : null;
+  const attendance = await getRoomAttendanceState(normalizedCode);
 
   return NextResponse.json({
     participants,
@@ -62,6 +64,7 @@ export async function GET(
     sessionParticipant,
     hostControls: await getRoomHostControls(normalizedCode),
     meetingChatMessages: await listVisibleMeetingChatMessages(normalizedCode, participantId),
+    attendance,
     whiteboard: whiteboardResult?.ok ? whiteboardResult.whiteboard : null,
     sessionParticipantId: participantId
   });

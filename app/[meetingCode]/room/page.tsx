@@ -71,6 +71,20 @@ type HostControls = {
   vivaTimeEnabled: boolean;
   meetingChatEnabled: boolean;
 };
+type AttendanceStatus = "present" | "absent" | "banned";
+type AttendanceSummaryEntry = {
+  participantId: string;
+  displayName: string;
+  status: AttendanceStatus;
+  attendancePercent: number;
+  attendedMs: number;
+};
+type AttendanceState = {
+  thresholdPercent: number | null;
+  trackingStartedAt: number | null;
+  endedAt: number | null;
+  summary: AttendanceSummaryEntry[];
+};
 type WhiteboardTool = "pen" | "highlighter" | "eraser" | "shape-rect" | "shape-circle" | "shape-line" | "text";
 type WhiteboardPoint = {
   x: number;
@@ -234,6 +248,12 @@ const DEFAULT_HOST_CONTROLS: HostControls = {
   forceStudentCamerasOn: false,
   vivaTimeEnabled: false,
   meetingChatEnabled: false
+};
+const DEFAULT_ATTENDANCE_STATE: AttendanceState = {
+  thresholdPercent: null,
+  trackingStartedAt: null,
+  endedAt: null,
+  summary: []
 };
 const POLL_FALLBACK_INTERVAL_MS = 10_000;
 const TOKEN_REFRESH_SKEW_SECONDS = 60;
@@ -620,6 +640,11 @@ export default function MeetingRoomPage() {
   const [meetingChatSending, setMeetingChatSending] = useState(false);
   const [meetingChatError, setMeetingChatError] = useState("");
   const [hostControls, setHostControls] = useState<HostControls>(DEFAULT_HOST_CONTROLS);
+  const [attendance, setAttendance] = useState<AttendanceState>(DEFAULT_ATTENDANCE_STATE);
+  const [thresholdDraft, setThresholdDraft] = useState(75);
+  const [isThresholdPopupOpen, setIsThresholdPopupOpen] = useState(false);
+  const [attendanceError, setAttendanceError] = useState("");
+  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [qualityProfile, setQualityProfile] = useState<QualityProfileName>("lecture");
   const [teacherQualityMode, setTeacherQualityMode] = useState<TeacherQualityMode>("smart-auto");
   const [autoEnabled, setAutoEnabled] = useState(true);
@@ -1863,6 +1888,50 @@ export default function MeetingRoomPage() {
     applyTeacherMode(mode, "manual");
   }
 
+  function ownAttendanceEntry(nextAttendance = attendance) {
+    return nextAttendance.summary.find((entry) => entry.participantId === participantIdRef.current) ?? null;
+  }
+
+  async function saveAttendanceThreshold() {
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/attendance/threshold`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(actorParticipantId ? { "x-participant-id": actorParticipantId } : {})
+      },
+      body: JSON.stringify({ thresholdPercent: thresholdDraft })
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as { message?: string; attendance?: AttendanceState };
+    if (!response.ok || !payload.attendance) {
+      setAttendanceError(payload.message ?? "Could not set attendance threshold.");
+      return;
+    }
+
+    setAttendance(payload.attendance);
+    setAttendanceError("");
+    setIsThresholdPopupOpen(false);
+  }
+
+  async function endMeetingOfficially() {
+    const actorParticipantId = sessionStorage.getItem(sessionKey(readableMeetingCode)) ?? "";
+    const response = await fetch(`/api/meetings/${encodeURIComponent(readableMeetingCode)}/attendance/end`, {
+      method: "POST",
+      headers: actorParticipantId ? { "x-participant-id": actorParticipantId } : undefined
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as { message?: string; attendance?: AttendanceState };
+    if (!response.ok || !payload.attendance) {
+      setAttendanceError(payload.message ?? "Could not end meeting.");
+      return;
+    }
+
+    setAttendance(payload.attendance);
+    setAttendanceError("");
+    setIsAttendanceModalOpen(true);
+  }
+
   const syncRoomState = useCallback(async (source: "poll" | "event") => {
     if (!readableMeetingCode) {
       return;
@@ -1885,6 +1954,7 @@ export default function MeetingRoomPage() {
       pendingParticipants?: PendingParticipant[];
       hostControls?: HostControls;
       meetingChatMessages?: MeetingChatMessage[];
+      attendance?: AttendanceState;
       whiteboard?: WhiteboardState | null;
     };
 
@@ -1919,6 +1989,11 @@ export default function MeetingRoomPage() {
     );
     setActiveStudents(students);
     setHostControls(payload.hostControls ?? DEFAULT_HOST_CONTROLS);
+    const nextAttendance = payload.attendance ?? DEFAULT_ATTENDANCE_STATE;
+    setAttendance(nextAttendance);
+    if (nextAttendance.endedAt && (serverRole === "teacher" || ownAttendanceEntry(nextAttendance))) {
+      setIsAttendanceModalOpen(true);
+    }
     setMeetingChatMessages(payload.meetingChatMessages ?? []);
     if (payload.whiteboard) {
       setWhiteboard(payload.whiteboard);
@@ -1993,6 +2068,8 @@ export default function MeetingRoomPage() {
         | { type: "participant-left"; participantId: string }
         | { type: "participant-status-updated"; participantId: string; status: ParticipantStatus }
         | { type: "participant-hand-updated"; participantId: string; handRaised: boolean; handRaisedAt: number | null }
+        | { type: "attendance-updated" }
+        | { type: "meeting-ended" }
         | { type: "whiteboard-updated"; version: number }
         | { type: "participant-media-control"; participantId: string; media: "camera" | "mic"; enabled: boolean }
         | {
@@ -2024,6 +2101,11 @@ export default function MeetingRoomPage() {
       }
 
       if (event.type === "participant-hand-updated") {
+        void syncRoomState("event");
+        return;
+      }
+
+      if (event.type === "attendance-updated" || event.type === "meeting-ended") {
         void syncRoomState("event");
         return;
       }
@@ -3226,6 +3308,21 @@ export default function MeetingRoomPage() {
 
           {accessError ? <p className="form-error">{accessError}</p> : null}
 
+          {selfRole === "teacher" ? (
+            <div className="attendance-threshold-control">
+              <button
+                type="button"
+                className="attendance-threshold-button"
+                onClick={() => {
+                  setThresholdDraft(attendance.thresholdPercent ?? thresholdDraft);
+                  setAttendanceError("");
+                  setIsThresholdPopupOpen(true);
+                }}
+              >
+                Threshold {attendance.thresholdPercent ?? thresholdDraft}%
+              </button>
+            </div>
+          ) : null}
 
           <div className="meeting-controls-row">
           {selfRole === "teacher" && remainingStudents.length > 0 ? (
@@ -3333,6 +3430,10 @@ export default function MeetingRoomPage() {
             title="Leave meeting"
             type="button"
             onClick={async () => {
+              if (selfRole === "teacher") {
+                await endMeetingOfficially();
+                return;
+              }
               await leaveMeeting();
               router.push("/landing");
             }}
@@ -3518,6 +3619,87 @@ export default function MeetingRoomPage() {
               Undo
             </button>
           ) : null}
+        </div>
+      ) : null}
+      {attendanceError ? <div className="attendance-toast" role="alert">{attendanceError}</div> : null}
+      {selfRole === "teacher" && isThresholdPopupOpen ? (
+        <div className="attendance-overlay" role="dialog" aria-modal="true" aria-label="Attendance threshold">
+          <div className="attendance-dialog threshold-dialog">
+            <div className="attendance-dialog-header">
+              <strong>Attendance Threshold</strong>
+              <button type="button" onClick={() => setIsThresholdPopupOpen(false)} aria-label="Close attendance threshold">
+                Close
+              </button>
+            </div>
+            <label className="threshold-slider-field">
+              <span>{thresholdDraft}% minimum meeting time</span>
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={thresholdDraft}
+                onChange={(event) => setThresholdDraft(Number(event.target.value))}
+              />
+            </label>
+            <button type="button" className="attendance-primary-button" onClick={() => void saveAttendanceThreshold()}>
+              Set Threshold
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {isAttendanceModalOpen && attendance.endedAt ? (
+        <div className="attendance-overlay" role="dialog" aria-modal="true" aria-label="Final attendance">
+          <div className="attendance-dialog">
+            <div className="attendance-dialog-header">
+              <strong>Final Attendance</strong>
+              <button
+                type="button"
+                onClick={async () => {
+                  await leaveMeeting();
+                  router.push("/landing");
+                }}
+                aria-label="Close final attendance"
+              >
+                Done
+              </button>
+            </div>
+            {selfRole === "teacher" ? (
+              <div className="attendance-list">
+                {attendance.summary.length === 0 ? (
+                  <p>No students joined this meeting.</p>
+                ) : (
+                  attendance.summary.map((entry) => (
+                    <div key={entry.participantId} className={`attendance-row ${entry.status}`}>
+                      <span>{entry.displayName}</span>
+                      <strong>{entry.status === "banned" ? "BANNED" : entry.status === "present" ? "Present" : "Absent"}</strong>
+                      <span>{entry.attendancePercent}%</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <div className="student-attendance-result">
+                {ownAttendanceEntry() ? (
+                  <>
+                    <p>
+                      You are marked as{" "}
+                      <strong>
+                        {ownAttendanceEntry()?.status === "present"
+                          ? "Present"
+                          : ownAttendanceEntry()?.status === "banned"
+                            ? "BANNED"
+                            : "Absent"}
+                      </strong>{" "}
+                      Today.
+                    </p>
+                    <p>Your attendance is: {ownAttendanceEntry()?.attendancePercent ?? 0}%</p>
+                  </>
+                ) : (
+                  <p>Your attendance record is not available.</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       ) : null}
       {isShareFocusOpen && canStudentFocusShare ? (
