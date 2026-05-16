@@ -5,11 +5,23 @@ function logParityMismatch(operation: string, details: Record<string, unknown>) 
   if (process.env.NODE_ENV === "production") {
     return;
   }
+  if (process.env.MEETING_DB_PARITY_LOGS === "0") {
+    return;
+  }
 
   console.warn("[meeting-db-parity-mismatch]", {
     operation,
     ...details
   });
+}
+
+function isIsoTimeEquivalent(a: string, b: string): boolean {
+  const aMs = Date.parse(a);
+  const bMs = Date.parse(b);
+  if (Number.isNaN(aMs) || Number.isNaN(bMs)) {
+    return a === b;
+  }
+  return Math.abs(aMs - bMs) < 1000;
 }
 
 function isParticipantEqual(a: Participant | null, b: Participant | null): boolean {
@@ -22,13 +34,17 @@ function isParticipantEqual(a: Participant | null, b: Participant | null): boole
 
   return (
     a.id === b.id &&
-    a.displayName === b.displayName &&
+    a.displayNameHash === b.displayNameHash &&
     a.role === b.role &&
     a.status === b.status &&
-    a.joinIdentityType === b.joinIdentityType &&
-    a.joinIdentityHash === b.joinIdentityHash &&
     a.handRaised === b.handRaised &&
-    a.handRaisedAt === b.handRaisedAt
+    a.handRaisedAt === b.handRaisedAt &&
+    a.uuidv7Nonce === b.uuidv7Nonce &&
+    a.active === b.active &&
+    a.rejoinNonce === b.rejoinNonce &&
+    a.ipPrefix === b.ipPrefix &&
+    a.uaHash === b.uaHash &&
+    isIsoTimeEquivalent(a.expiresAt, b.expiresAt)
   );
 }
 
@@ -200,33 +216,32 @@ export class DualWriteMeetingRepository implements MeetingRepository {
     return this.shouldReadFromPrimary() ? primary : secondary;
   }
 
-  async isIdentityBanned(meetingCode: string, identityHash: string): Promise<boolean> {
+  async isParticipantSessionBanned(meetingCode: string, participantId: string): Promise<boolean> {
     if (!this.secondary) {
-      return this.primary.isIdentityBanned(meetingCode, identityHash);
+      return this.primary.isParticipantSessionBanned(meetingCode, participantId);
     }
     const [primary, secondary] = await Promise.all([
-      this.primary.isIdentityBanned(meetingCode, identityHash),
-      this.secondary.isIdentityBanned(meetingCode, identityHash)
+      this.primary.isParticipantSessionBanned(meetingCode, participantId),
+      this.secondary.isParticipantSessionBanned(meetingCode, participantId)
     ]);
     if (primary !== secondary) {
-      logParityMismatch("isIdentityBanned", { meetingCode, primary, secondary });
+      logParityMismatch("isParticipantSessionBanned", { meetingCode, participantId, primary, secondary });
     }
     return this.shouldReadFromPrimary() ? primary : secondary;
   }
 
-  async banIdentity(
+  async banParticipantSession(
     meetingCode: string,
-    identityType: "email" | "phone",
-    identityHash: string,
+    participantId: string,
     bannedByParticipantId: string
   ): Promise<void> {
     if (!this.secondary) {
-      await this.primary.banIdentity(meetingCode, identityType, identityHash, bannedByParticipantId);
+      await this.primary.banParticipantSession(meetingCode, participantId, bannedByParticipantId);
       return;
     }
     await Promise.all([
-      this.primary.banIdentity(meetingCode, identityType, identityHash, bannedByParticipantId),
-      this.secondary.banIdentity(meetingCode, identityType, identityHash, bannedByParticipantId)
+      this.primary.banParticipantSession(meetingCode, participantId, bannedByParticipantId),
+      this.secondary.banParticipantSession(meetingCode, participantId, bannedByParticipantId)
     ]);
   }
 

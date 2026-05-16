@@ -20,7 +20,7 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   }
 
   const cookieStore = await cookies();
-  const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const session = await parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value, request);
   if (!session || session.meetingCode !== normalizedCode) {
     return NextResponse.json({ message: "Unauthorized for this meeting." }, { status: 403 });
   }
@@ -33,3 +33,5 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   sendSignal(normalizedCode, session.participantId, payload.toParticipantId, payload.signalType, payload.signal);
   return NextResponse.json({ ok: true });
 }
+
+

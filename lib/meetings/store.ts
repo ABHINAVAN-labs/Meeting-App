@@ -49,17 +49,18 @@ function normalizeHostControls(hostControls?: Partial<HostControls>): HostContro
 }
 
 function normalizeParticipantStatus(participant: Participant): Participant {
-  if (participant.status && typeof participant.handRaised === "boolean" && "handRaisedAt" in participant) {
-    return participant;
-  }
-
   const normalized: Participant = {
     ...participant,
     status: participant.status ?? "active",
-    joinIdentityType: participant.joinIdentityType ?? null,
-    joinIdentityHash: participant.joinIdentityHash ?? null,
+    displayNameHash: participant.displayNameHash ?? "",
     handRaised: participant.handRaised ?? false,
-    handRaisedAt: participant.handRaisedAt ?? null
+    handRaisedAt: participant.handRaisedAt ?? null,
+    uuidv7Nonce: participant.uuidv7Nonce ?? "",
+    active: participant.active ?? true,
+    rejoinNonce: participant.rejoinNonce ?? null,
+    ipPrefix: participant.ipPrefix ?? "0.0.0.0/24",
+    uaHash: participant.uaHash ?? "",
+    expiresAt: participant.expiresAt ?? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
   };
   return normalized;
 }

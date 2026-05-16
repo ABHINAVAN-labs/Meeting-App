@@ -4,7 +4,6 @@ import type {
   AttendanceState,
   AttendanceSummaryEntry,
   HostControls,
-  JoinIdentityType,
   Participant,
   ParticipantRole,
   ParticipantStatus
@@ -14,15 +13,20 @@ import type { MeetingRecord, MeetingRepository } from "./repository";
 type DbParticipantRow = {
   participant_id: string;
   meeting_code: string;
-  display_name: string;
+  display_name: string | null;
+  display_name_hash: string | null;
   role: ParticipantRole;
   status: ParticipantStatus;
-  join_identity_type: JoinIdentityType | null;
-  join_identity_hash: string | null;
   hand_raised: boolean;
   hand_raised_at: number | null;
   joined_at_ms: number;
   last_seen_at_ms: number;
+  uuidv7_nonce: string | null;
+  active: boolean | null;
+  rejoin_nonce: string | null;
+  ip_prefix: string | null;
+  ua_hash: string | null;
+  expires_at: string | null;
 };
 
 type DbMeetingRow = {
@@ -70,15 +74,20 @@ const DEFAULT_HOST_CONTROLS: HostControls = {
 function toParticipant(row: DbParticipantRow): Participant {
   return {
     id: row.participant_id,
-    displayName: row.display_name,
+    displayName: row.display_name ?? "[redacted]",
+    displayNameHash: row.display_name_hash ?? "",
     role: row.role,
     status: row.status,
-    joinIdentityType: row.join_identity_type,
-    joinIdentityHash: row.join_identity_hash,
     handRaised: row.hand_raised,
     handRaisedAt: row.hand_raised_at,
     joinedAt: row.joined_at_ms,
-    lastSeenAt: row.last_seen_at_ms
+    lastSeenAt: row.last_seen_at_ms,
+    uuidv7Nonce: row.uuidv7_nonce ?? "",
+    active: row.active ?? true,
+    rejoinNonce: row.rejoin_nonce ?? null,
+    ipPrefix: row.ip_prefix ?? "0.0.0.0/24",
+    uaHash: row.ua_hash ?? "",
+    expiresAt: row.expires_at ?? new Date(0).toISOString()
   };
 }
 
@@ -170,15 +179,21 @@ export class SupabaseMeetingRepository implements MeetingRepository {
       {
         participant_id: participant.id,
         meeting_code: meetingCode,
-        display_name: participant.displayName,
+        // SECURITY NOTE: plaintext display name is intentionally redacted in persistent storage.
+        display_name: "[redacted]",
+        display_name_hash: participant.displayNameHash,
         role: participant.role,
         status: participant.status,
-        join_identity_type: participant.joinIdentityType,
-        join_identity_hash: participant.joinIdentityHash,
         hand_raised: participant.handRaised,
         hand_raised_at: participant.handRaisedAt,
         joined_at_ms: participant.joinedAt,
-        last_seen_at_ms: participant.lastSeenAt
+        last_seen_at_ms: participant.lastSeenAt,
+        uuidv7_nonce: participant.uuidv7Nonce,
+        active: participant.active,
+        rejoin_nonce: participant.rejoinNonce,
+        ip_prefix: participant.ipPrefix,
+        ua_hash: participant.uaHash,
+        expires_at: participant.expiresAt
       },
       { onConflict: "participant_id" }
     );
@@ -207,7 +222,9 @@ export class SupabaseMeetingRepository implements MeetingRepository {
     const client = this.assertClient();
     const { data, error } = await client
       .from("participants")
-      .select("participant_id,meeting_code,display_name,role,status,join_identity_type,join_identity_hash,hand_raised,hand_raised_at,joined_at_ms,last_seen_at_ms")
+      .select(
+        "participant_id,meeting_code,display_name,display_name_hash,role,status,hand_raised,hand_raised_at,joined_at_ms,last_seen_at_ms,uuidv7_nonce,active,rejoin_nonce,ip_prefix,ua_hash,expires_at"
+      )
       .eq("meeting_code", meetingCode)
       .eq("participant_id", participantId)
       .maybeSingle<DbParticipantRow>();
@@ -223,7 +240,9 @@ export class SupabaseMeetingRepository implements MeetingRepository {
     const client = this.assertClient();
     const { data, error } = await client
       .from("participants")
-      .select("participant_id,meeting_code,display_name,role,status,join_identity_type,join_identity_hash,hand_raised,hand_raised_at,joined_at_ms,last_seen_at_ms")
+      .select(
+        "participant_id,meeting_code,display_name,display_name_hash,role,status,hand_raised,hand_raised_at,joined_at_ms,last_seen_at_ms,uuidv7_nonce,active,rejoin_nonce,ip_prefix,ua_hash,expires_at"
+      )
       .eq("meeting_code", meetingCode)
       .order("joined_at_ms", { ascending: true })
       .returns<DbParticipantRow[]>();
@@ -263,7 +282,9 @@ export class SupabaseMeetingRepository implements MeetingRepository {
       .update({ status, last_seen_at_ms: now })
       .eq("meeting_code", meetingCode)
       .eq("participant_id", participantId)
-      .select("participant_id,meeting_code,display_name,role,status,join_identity_type,join_identity_hash,hand_raised,hand_raised_at,joined_at_ms,last_seen_at_ms")
+      .select(
+        "participant_id,meeting_code,display_name,display_name_hash,role,status,hand_raised,hand_raised_at,joined_at_ms,last_seen_at_ms,uuidv7_nonce,active,rejoin_nonce,ip_prefix,ua_hash,expires_at"
+      )
       .maybeSingle<DbParticipantRow>();
 
     if (error) {
@@ -286,7 +307,9 @@ export class SupabaseMeetingRepository implements MeetingRepository {
       .update({ hand_raised: handRaised, hand_raised_at: handRaisedAt, last_seen_at_ms: lastSeenAt })
       .eq("meeting_code", meetingCode)
       .eq("participant_id", participantId)
-      .select("participant_id,meeting_code,display_name,role,status,join_identity_type,join_identity_hash,hand_raised,hand_raised_at,joined_at_ms,last_seen_at_ms")
+      .select(
+        "participant_id,meeting_code,display_name,display_name_hash,role,status,hand_raised,hand_raised_at,joined_at_ms,last_seen_at_ms,uuidv7_nonce,active,rejoin_nonce,ip_prefix,ua_hash,expires_at"
+      )
       .maybeSingle<DbParticipantRow>();
 
     if (error) {
@@ -311,13 +334,14 @@ export class SupabaseMeetingRepository implements MeetingRepository {
     return (count ?? 0) > 0;
   }
 
-  async isIdentityBanned(meetingCode: string, identityHash: string): Promise<boolean> {
+  async isParticipantSessionBanned(meetingCode: string, participantId: string): Promise<boolean> {
     const client = this.assertClient();
     const { count, error } = await client
       .from("meeting_bans")
       .select("meeting_code", { count: "exact", head: true })
       .eq("meeting_code", meetingCode)
-      .eq("identity_hash", identityHash);
+      .eq("identity_type", "participant_session")
+      .eq("identity_hash", participantId);
 
     if (error) {
       throw error;
@@ -326,18 +350,17 @@ export class SupabaseMeetingRepository implements MeetingRepository {
     return (count ?? 0) > 0;
   }
 
-  async banIdentity(
+  async banParticipantSession(
     meetingCode: string,
-    identityType: JoinIdentityType,
-    identityHash: string,
+    participantId: string,
     bannedByParticipantId: string
   ): Promise<void> {
     const client = this.assertClient();
     const { error } = await client.from("meeting_bans").upsert(
       {
         meeting_code: meetingCode,
-        identity_type: identityType,
-        identity_hash: identityHash,
+        identity_type: "participant_session",
+        identity_hash: participantId,
         banned_by_participant_id: bannedByParticipantId
       },
       { onConflict: "meeting_code,identity_hash" }

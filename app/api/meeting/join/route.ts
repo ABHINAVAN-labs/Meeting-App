@@ -27,14 +27,17 @@ export async function POST(request: Request) {
     }
   }
 
-  const result = await joinMeeting({
-    meetingCode: payload.meetingCode ?? payload.meeting_code ?? "",
-    displayName: payload.displayName ?? payload.display_name ?? "",
-    role: payload.role === "teacher" ? "teacher" : "student",
-  }, {
-    ipPrefix,
-    uaHash
-  });
+  const result = await joinMeeting(
+    {
+      meetingCode: payload.meetingCode ?? payload.meeting_code ?? "",
+      displayName: payload.displayName ?? payload.display_name ?? "",
+      role: payload.role === "teacher" ? "teacher" : "student"
+    },
+    {
+      ipPrefix,
+      uaHash
+    }
+  );
 
   if (!result.ok) {
     const status = result.status ?? 400;
@@ -69,11 +72,8 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     participant_id: result.participant.id,
-    meetingCode: result.meetingCode,
     meeting_code: result.meetingCode,
     role: result.participant.role,
-    expires_at: result.participant.expiresAt,
-    participant: result.participant,
-    status: result.status
+    expires_at: result.participant.expiresAt
   });
 }

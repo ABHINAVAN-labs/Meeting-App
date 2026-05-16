@@ -2,7 +2,6 @@ import type {
   AttendanceRecord,
   AttendanceState,
   HostControls,
-  JoinIdentityType,
   Participant,
   ParticipantRole,
   ParticipantStatus
@@ -30,13 +29,8 @@ export interface MeetingRepository {
     lastSeenAt: number
   ): Promise<Participant | null>;
   removeParticipant(meetingCode: string, participantId: string): Promise<boolean>;
-  isIdentityBanned(meetingCode: string, identityHash: string): Promise<boolean>;
-  banIdentity(
-    meetingCode: string,
-    identityType: JoinIdentityType,
-    identityHash: string,
-    bannedByParticipantId: string
-  ): Promise<void>;
+  isParticipantSessionBanned(meetingCode: string, participantId: string): Promise<boolean>;
+  banParticipantSession(meetingCode: string, participantId: string, bannedByParticipantId: string): Promise<void>;
   getHostControls(meetingCode: string): Promise<HostControls>;
   updateHostControls(meetingCode: string, updates: Partial<HostControls>): Promise<HostControls>;
   getAttendanceState(meetingCode: string): Promise<AttendanceState>;

@@ -1,4 +1,4 @@
-import type { AttendanceRecord, AttendanceState, HostControls, JoinIdentityType, Participant, ParticipantRole, ParticipantStatus } from "./types";
+import type { AttendanceRecord, AttendanceState, HostControls, Participant, ParticipantRole, ParticipantStatus } from "./types";
 import type { MeetingRecord, MeetingRepository } from "./repository";
 import {
   countRole as countRoleInMemory,
@@ -17,7 +17,7 @@ import {
 } from "./store";
 
 const EMPTY_RECORD_TIME = new Date(0).toISOString();
-const bansByMeeting = new Map<string, Set<string>>();
+const sessionBansByMeeting = new Map<string, Set<string>>();
 
 function fallbackMeetingRecord(meetingCode: string): MeetingRecord {
   return {
@@ -91,23 +91,22 @@ export class InMemoryMeetingRepository implements MeetingRepository {
     return after < before;
   }
 
-  async isIdentityBanned(meetingCode: string, identityHash: string): Promise<boolean> {
-    const banned = bansByMeeting.get(meetingCode);
+  async isParticipantSessionBanned(meetingCode: string, participantId: string): Promise<boolean> {
+    const banned = sessionBansByMeeting.get(meetingCode);
     if (!banned) {
       return false;
     }
-    return banned.has(identityHash);
+    return banned.has(participantId);
   }
 
-  async banIdentity(
+  async banParticipantSession(
     meetingCode: string,
-    _identityType: JoinIdentityType,
-    identityHash: string,
+    participantId: string,
     _bannedByParticipantId: string
   ): Promise<void> {
-    const banned = bansByMeeting.get(meetingCode) ?? new Set<string>();
-    banned.add(identityHash);
-    bansByMeeting.set(meetingCode, banned);
+    const banned = sessionBansByMeeting.get(meetingCode) ?? new Set<string>();
+    banned.add(participantId);
+    sessionBansByMeeting.set(meetingCode, banned);
   }
 
   async getHostControls(meetingCode: string): Promise<HostControls> {

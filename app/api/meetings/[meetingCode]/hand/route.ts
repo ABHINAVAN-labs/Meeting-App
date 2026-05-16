@@ -18,7 +18,7 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
   }
 
   const cookieStore = await cookies();
-  const session = parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const session = await parseSessionCookie(cookieStore.get(SESSION_COOKIE_NAME)?.value, request);
 
   const headerParticipantId = request.headers.get("x-participant-id")?.trim() ?? "";
   const actorParticipantId = headerParticipantId || (session?.meetingCode === normalizedCode ? session.participantId : "");
@@ -38,3 +38,5 @@ export async function POST(request: Request, context: { params: Promise<{ meetin
 
   return NextResponse.json({ ok: true });
 }
+
+

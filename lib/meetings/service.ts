@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from "crypto";
-import { normalizeJoinIdentity, normalizeMeetingCode, normalizeParticipantName } from "./validation";
+﻿import { createHash, randomUUID } from "crypto";
+import { normalizeMeetingCode, normalizeParticipantName } from "./validation";
 import {
   addMeetingChatMessage,
   getMeetingChatMessages,
@@ -9,18 +9,27 @@ import {
   subscribeToRoom
 } from "./store";
 import { getMeetingRepository } from "./repository.factory";
-import type { HostControls, JoinMeetingRequest, MeetingChatMessage, Participant } from "./types";
 import type {
   AttendanceRecord,
   AttendanceState,
   AttendanceSummaryEntry,
+  HostControls,
+  JoinMeetingRequest,
+  MeetingChatMessage,
+  Participant,
   WhiteboardAction,
   WhiteboardDrawable,
   WhiteboardPoint,
   WhiteboardState
 } from "./types";
+import { checkIpJoinRateLimit, checkMeetingJoinRateLimit } from "../security/rateLimit";
+import { ensureMeetingRegistryRecord, getMeetingRegistryRecord } from "../security/meetingRegistry";
+import { generateParticipantIdentity } from "../security/identity";
+import { createRejoinNonce, invalidateRejoinNonce } from "../security/rejoinToken";
+import { getSecurityEnv } from "../security/env";
 
 const meetingRepo = getMeetingRepository();
+getSecurityEnv();
 
 const WHITEBOARD_MAX_POINTS_PER_STROKE = 500;
 const WHITEBOARD_MAX_DRAWABLES = 600;
@@ -128,18 +137,53 @@ function buildAttendanceSummary(attendance: AttendanceState, endedAt: number): A
   });
 }
 
-export async function joinMeeting(payload: JoinMeetingRequest): Promise<JoinResult> {
+export async function joinMeeting(
+  payload: JoinMeetingRequest,
+  context: { ipPrefix: string; uaHash: string }
+): Promise<JoinResult> {
   const meetingCode = normalizeMeetingCode(payload.meetingCode);
   if (!meetingCode) {
     return { ok: false, message: "Invalid meeting code." };
   }
 
+  const ipRate = checkIpJoinRateLimit(context.ipPrefix);
+  if (!ipRate.allowed) {
+    return { ok: false, message: "Join attempt is rate-limited.", status: 429 };
+  }
+  const meetingRate = checkMeetingJoinRateLimit(meetingCode);
+  if (!meetingRate.allowed) {
+    return { ok: false, message: "Join attempt is rate-limited.", status: 429 };
+  }
+
   const displayName = normalizeParticipantName(payload.displayName);
   if (!displayName) {
-    return { ok: false, message: "Enter a valid name (2-80 chars)." };
+    return { ok: false, message: "Enter a valid name." };
   }
+
+  const existingMeeting = getMeetingRegistryRecord(meetingCode);
+  if (!existingMeeting && payload.role !== "teacher") {
+    return { ok: false, message: "Join failed.", status: 401 };
+  }
+  if (existingMeeting && !existingMeeting.allowed_roles.includes(payload.role)) {
+    return { ok: false, message: "Join failed.", status: 401 };
+  }
+
   if (payload.role === "teacher" && (await meetingRepo.countRole(meetingCode, "teacher")) >= 1) {
-    return { ok: false, message: "A teacher is already active in this meeting." };
+    return { ok: false, message: "Join failed.", status: 401 };
+  }
+
+  const { participantId, uuidNonce } = generateParticipantIdentity(meetingCode, payload.role, displayName);
+  const displayNameHash = createHash("sha256").update(displayName).digest("hex");
+
+  const participants = await meetingRepo.getParticipants(meetingCode);
+  const registry =
+    existingMeeting ??
+    ensureMeetingRegistryRecord(meetingCode, participantId, {
+      maxParticipants: 120
+    });
+
+  if (participants.filter((participant) => participant.active).length >= registry.max_participants) {
+    return { ok: false, message: "Join attempt is rate-limited.", status: 429 };
   }
 
   await meetingRepo.ensureMeeting(meetingCode);
@@ -148,36 +192,23 @@ export async function joinMeeting(payload: JoinMeetingRequest): Promise<JoinResu
     return { ok: false, message: "This meeting has already ended.", status: 403 };
   }
 
-  let normalizedIdentity: string | null = null;
-  if (payload.role === "student") {
-    const identityType = payload.identityType;
-    const identityValue = payload.identityValue ?? "";
-    if (identityType !== "email" && identityType !== "phone") {
-      return { ok: false, message: "Student email or phone is required." };
-    }
-    normalizedIdentity = normalizeJoinIdentity(identityType, identityValue);
-    if (!normalizedIdentity) {
-      return { ok: false, message: "Enter a valid email or phone number." };
-    }
-    const identityHash = createHash("sha256").update(normalizedIdentity).digest("hex");
-    const isBanned = await meetingRepo.isIdentityBanned(meetingCode, identityHash);
-    if (isBanned) {
-      return { ok: false, message: "You are not allowed to rejoin this meeting.", status: 403 };
-    }
-  }
-
   const now = Date.now();
   const participant: Participant = {
-    id: randomUUID(),
+    id: participantId,
     displayName,
+    displayNameHash,
     role: payload.role,
     status: payload.role === "teacher" ? "active" : "pending",
-    joinIdentityType: payload.role === "student" ? payload.identityType ?? null : null,
-    joinIdentityHash: normalizedIdentity ? createHash("sha256").update(normalizedIdentity).digest("hex") : null,
     handRaised: false,
     handRaisedAt: null,
     joinedAt: now,
-    lastSeenAt: now
+    lastSeenAt: now,
+    uuidv7Nonce: uuidNonce,
+    active: true,
+    rejoinNonce: createRejoinNonce(),
+    ipPrefix: context.ipPrefix,
+    uaHash: context.uaHash,
+    expiresAt: registry.expires_at
   };
 
   try {
@@ -309,7 +340,11 @@ export async function leaveMeeting(meetingCode: string, participantId: string): 
   }
 
   const participant = await meetingRepo.getParticipant(normalizedMeetingCode, participantId);
-  if (participant?.role === "student") {
+  if (!participant) {
+    return;
+  }
+
+  if (participant.role === "student") {
     const attendance = await meetingRepo.getAttendanceState(normalizedMeetingCode);
     const record = attendance.records.find((entry) => entry.participantId === participantId);
     if (record) {
@@ -317,8 +352,19 @@ export async function leaveMeeting(meetingCode: string, participantId: string): 
     }
   }
 
-  const removed = await meetingRepo.removeParticipant(normalizedMeetingCode, participantId);
-  if (removed) {
+  await meetingRepo.upsertParticipant(normalizedMeetingCode, {
+    ...participant,
+    active: false,
+    rejoinNonce: null,
+    status: "rejected",
+    lastSeenAt: Date.now()
+  });
+  publishEvent(normalizedMeetingCode, {
+    type: "participant-status-updated",
+    participantId,
+    status: "rejected"
+  });
+  if (participant.active) {
     publishEvent(normalizedMeetingCode, { type: "participant-left", participantId });
   }
 }
@@ -618,7 +664,7 @@ export async function banParticipantFromRoom(
   meetingCode: string,
   actorParticipantId: string,
   targetParticipantId: string
-): Promise<{ ok: true } | { ok: false; message: string }> {
+): Promise<{ ok: true; bannedUntil: string } | { ok: false; message: string }> {
   const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
   if (!normalizedMeetingCode) {
     return { ok: false, message: "Invalid meeting code." };
@@ -634,16 +680,8 @@ export async function banParticipantFromRoom(
   if (target.role === "teacher") {
     return { ok: false, message: "Teacher cannot be banned from this control." };
   }
-  if (!target.joinIdentityType || !target.joinIdentityHash) {
-    return { ok: false, message: "Participant identity is unavailable for ban." };
-  }
-
-  await meetingRepo.banIdentity(
-    normalizedMeetingCode,
-    target.joinIdentityType,
-    target.joinIdentityHash,
-    actorParticipantId
-  );
+  await meetingRepo.banParticipantSession(normalizedMeetingCode, target.id, actorParticipantId);
+  invalidateRejoinNonce(target.rejoinNonce);
 
   const attendance = await meetingRepo.getAttendanceState(normalizedMeetingCode);
   const record = attendance.records.find((entry) => entry.participantId === targetParticipantId) ?? createAttendanceRecord(target);
@@ -657,7 +695,7 @@ export async function banParticipantFromRoom(
     publishEvent(normalizedMeetingCode, { type: "participant-left", participantId: targetParticipantId });
   }
 
-  return { ok: true };
+  return { ok: true, bannedUntil: target.expiresAt };
 }
 
 export async function setAttendanceThreshold(
@@ -869,3 +907,48 @@ export function sendSignal(
 }
 
 export { subscribeToRoom };
+
+export async function getParticipantForMeeting(meetingCode: string, participantId: string): Promise<Participant | null> {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return null;
+  }
+  if (await meetingRepo.isParticipantSessionBanned(normalizedMeetingCode, participantId)) {
+    return null;
+  }
+  return meetingRepo.getParticipant(normalizedMeetingCode, participantId);
+}
+
+export async function isParticipantSessionBanned(meetingCode: string, participantId: string): Promise<boolean> {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return false;
+  }
+  return meetingRepo.isParticipantSessionBanned(normalizedMeetingCode, participantId);
+}
+
+export async function updateParticipantRejoinNonce(
+  meetingCode: string,
+  participantId: string,
+  rejoinNonce: string | null
+): Promise<Participant | null> {
+  const normalizedMeetingCode = normalizeMeetingCode(meetingCode);
+  if (!normalizedMeetingCode) {
+    return null;
+  }
+
+  const participant = await meetingRepo.getParticipant(normalizedMeetingCode, participantId);
+  if (!participant) {
+    return null;
+  }
+
+  const updated: Participant = {
+    ...participant,
+    rejoinNonce,
+    lastSeenAt: Date.now()
+  };
+
+  await meetingRepo.upsertParticipant(normalizedMeetingCode, updated);
+  return updated;
+}
+
